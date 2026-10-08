@@ -11,7 +11,7 @@ use oxfer_core::{BoxRead, BoxWrite, Entry, Error, LocalFs, RemoteFs, RemotePath,
 use tempfile::TempDir;
 
 fn rp(p: &Path) -> RemotePath {
-    RemotePath::new(p.to_string_lossy().to_string())
+    RemotePath::from_local(&p.to_string_lossy())
 }
 
 fn opts() -> TransferOptions {

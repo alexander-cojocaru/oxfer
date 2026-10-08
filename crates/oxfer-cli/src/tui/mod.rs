@@ -186,7 +186,7 @@ fn handle(app: &mut App, msg: Msg) -> Vec<Action> {
 
 pub async fn run(fs: Arc<dyn RemoteFs>, label: String, start_dir: &str) -> Result<()> {
     let remote_cwd = fs.realpath(&RemotePath::new(start_dir)).await?;
-    let local_cwd = RemotePath::new(std::env::current_dir()?.to_string_lossy().into_owned());
+    let local_cwd = RemotePath::from_local(&std::env::current_dir()?.to_string_lossy());
     let mut app = App::new(
         Pane::new("local", local_cwd.clone()),
         Pane::new(label, remote_cwd.clone()),

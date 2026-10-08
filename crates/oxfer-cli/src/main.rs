@@ -89,7 +89,7 @@ fn rpath(spec: &RemoteSpec) -> RemotePath {
 }
 
 fn local(p: &str) -> RemotePath {
-    RemotePath::new(p)
+    RemotePath::from_local(p)
 }
 
 async fn run(cli: Cli) -> Result<bool> {
