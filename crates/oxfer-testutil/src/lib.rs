@@ -75,28 +75,41 @@ impl Server {
         keygen(&d.join("host"));
         keygen(&d.join("client"));
         std::fs::copy(d.join("client.pub"), d.join("authorized_keys")).unwrap();
-        let port = free_port();
-        let conf = format!(
-            "Port {port}\nListenAddress 127.0.0.1\nHostKey {d}/host\nPidFile {d}/pid\n\
-             AuthorizedKeysFile {d}/authorized_keys\nStrictModes no\nUsePAM no\n\
-             PasswordAuthentication no\nPubkeyAuthentication yes\n\
-             Subsystem sftp {sftp}\n",
-            d = d.display(),
-            sftp = sftp.display()
-        );
-        std::fs::write(d.join("sshd_config"), conf).unwrap();
-        let child = Command::new(sshd)
-            .args(["-D", "-e", "-f"])
-            .arg(d.join("sshd_config"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
-        for _ in 0..100 {
-            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-                return Some(Server { dir, child, port });
+        // The port is picked by bind-and-release, so another test process can
+        // grab it first; detect that (sshd exits) and try a fresh port.
+        for _ in 0..5 {
+            let port = free_port();
+            let conf = format!(
+                "Port {port}\nListenAddress 127.0.0.1\nHostKey {d}/host\nPidFile {d}/pid\n\
+                 AuthorizedKeysFile {d}/authorized_keys\nStrictModes no\nUsePAM no\n\
+                 PasswordAuthentication no\nPubkeyAuthentication yes\n\
+                 Subsystem sftp {sftp}\n",
+                d = d.display(),
+                sftp = sftp.display()
+            );
+            std::fs::write(d.join("sshd_config"), conf).unwrap();
+            let mut child = Command::new(&sshd)
+                .args(["-D", "-e", "-f"])
+                .arg(d.join("sshd_config"))
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()?;
+            for _ in 0..100 {
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    break;
+                }
+                if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                    // connect() also succeeds if someone else owns the port
+                    if matches!(child.try_wait(), Ok(None)) {
+                        return Some(Server { dir, child, port });
+                    }
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            let _ = child.kill();
+            let _ = child.wait();
         }
         None
     }
