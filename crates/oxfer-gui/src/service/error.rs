@@ -68,9 +68,10 @@ impl From<oxfer_config::Error> for ServiceError {
     fn from(e: oxfer_config::Error) -> Self {
         use oxfer_config::Error as E;
         let code = match &e {
-            E::Invalid(_) | E::InvalidJump(_) => "invalid",
-            E::Duplicate(_) => "alreadyExists",
-            E::NotFound(_) => "notFound",
+            E::Invalid(_) | E::InvalidJump(_) | E::InvalidCredential(_) => "invalid",
+            E::Duplicate(_) | E::DuplicateCredential(_) => "alreadyExists",
+            E::NotFound(_) | E::UnknownCredential(_) => "notFound",
+            E::CredentialInUse { .. } => "inUse",
             E::Secret(_) | E::MissingSecret(_) => "secret",
             _ => "config",
         };

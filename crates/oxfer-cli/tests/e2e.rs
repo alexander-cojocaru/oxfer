@@ -236,6 +236,38 @@ fn profiles_can_be_saved_and_used() {
     ok(&o);
     assert!(String::from_utf8_lossy(&o.stdout).contains("local"));
 
+    // groups and search
+    for (name, host, group) in [
+        ("db", "db.internal", "Work"),
+        ("shop", "shop.example", "ACME"),
+    ] {
+        ok(&run(&["profile", "add", name, host, "--group", group]));
+    }
+    let o = run(&["profile", "list"]);
+    ok(&o);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    let lines: Vec<&str> = out
+        .lines()
+        .map(|l| l.split(" -> ").next().unwrap())
+        .collect();
+    assert_eq!(
+        lines,
+        ["local", "ACME:", "  shop", "Work:", "  db"],
+        "{out}"
+    );
+    let o = run(&["profile", "list", "INTERNAL"]);
+    ok(&o);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(
+        out.contains("db") && !out.contains("shop") && !out.contains("local"),
+        "{out}"
+    );
+    let o = run(&["profile", "list", "--group", "ACME"]);
+    let out = String::from_utf8_lossy(&o.stdout).into_owned();
+    assert!(out.contains("shop") && !out.contains("db"), "{out}");
+    let o = run(&["profile", "show", "db"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("group: Work"));
+
     // adding again without --force is refused
     assert!(!run(&["profile", "add", "local", "h", "--auth", "agent"])
         .status
@@ -246,6 +278,38 @@ fn profiles_can_be_saved_and_used() {
     let o = run(&["--known-hosts", kh.to_str().unwrap(), "ls", "@local"]);
     ok(&o);
     assert!(String::from_utf8_lossy(&o.stdout).contains("marker.txt"));
+
+    // a profile that logs in through a shared credential
+    ok(&run(&[
+        "credential",
+        "add",
+        "oxfer-e2e-key",
+        "--user",
+        &e.srv.user(),
+        "--auth",
+        "key",
+        "--key-file",
+        key.to_str().unwrap(),
+    ]));
+    ok(&run(&[
+        "profile",
+        "add",
+        "viacred",
+        "127.0.0.1",
+        "--port",
+        &port,
+        "--credential",
+        "oxfer-e2e-key",
+        "--dir",
+        work.to_str().unwrap(),
+    ]));
+    let o = run(&["--known-hosts", kh.to_str().unwrap(), "ls", "@viacred"]);
+    ok(&o);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("marker.txt"));
+    // in use: cannot be removed
+    assert!(!run(&["credential", "rm", "oxfer-e2e-key"]).status.success());
+    ok(&run(&["profile", "rm", "viacred"]));
+    ok(&run(&["credential", "rm", "oxfer-e2e-key"]));
 
     ok(&run(&["profile", "rm", "local"]));
     assert!(

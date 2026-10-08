@@ -39,6 +39,17 @@ export interface Profile {
   user: string | null;
   auth: AuthDto;
   remoteDir: string | null;
+  /** Folder the profile is listed under; `null` for the top level. */
+  group: string | null;
+  /** Shared credential; when set, it supplies the user and authentication. */
+  credential: string | null;
+}
+
+/** A user name plus authentication that several profiles can share. */
+export interface Credential {
+  name: string;
+  user: string | null;
+  auth: AuthDto;
 }
 
 export type QuickAuth = 'auto' | 'agent' | 'keyFile' | 'password';
@@ -53,6 +64,8 @@ export interface QuickConnect {
   keyPath?: string | null;
   remoteDir?: string | null;
   insecureTls?: boolean;
+  /** Saved credential replacing user, auth, password and key path. */
+  credential?: string | null;
 }
 
 export type ConnectRequest = { kind: 'profile'; name: string } | ({ kind: 'quick' } & QuickConnect);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConnectionDialog from './components/ConnectionDialog.svelte';
+  import CredentialDialog from './components/CredentialDialog.svelte';
   import FilePane, { type TransferIntent } from './components/FilePane.svelte';
   import Icon from './components/Icon.svelte';
   import PromptDialog from './components/PromptDialog.svelte';
@@ -8,12 +9,13 @@
   import Toasts from './components/Toasts.svelte';
   import TransferQueue from './components/TransferQueue.svelte';
   import { api } from './lib/api';
+  import { groupNames } from './lib/profiles';
   import { app } from './lib/state.svelte';
   import { formatSpeed } from './lib/format';
   import { parentPath } from './lib/files';
   import { t } from './lib/i18n';
   import { isActive, totalSpeed } from './lib/transfers';
-  import { LOCAL_SESSION, type OverwritePolicy, type Profile, type SessionInfo } from './lib/types';
+  import { LOCAL_SESSION, type Credential, type OverwritePolicy, type Profile, type SessionInfo } from './lib/types';
 
   type Side = 'left' | 'right';
 
@@ -22,7 +24,12 @@
   let sidebarOpen = $state(true);
   let queueOpen = $state(true);
   let connecting = $state<string | null>(null);
-  let dialog = $state<{ mode: 'quick' } | { mode: 'profile'; profile: Profile | null } | null>(null);
+  let dialog = $state<
+    | { mode: 'quick' }
+    | { mode: 'profile'; profile: Profile | null }
+    | { mode: 'credential'; credential: Credential | null }
+    | null
+  >(null);
   let panes = $state<Record<Side, FilePane | undefined>>({ left: undefined, right: undefined });
 
   const other = (s: Side): Side => (s === 'left' ? 'right' : 'left');
@@ -218,6 +225,8 @@
       onquickconnect={() => (dialog = { mode: 'quick' })}
       onnewprofile={() => (dialog = { mode: 'profile', profile: null })}
       oneditprofile={(p) => (dialog = { mode: 'profile', profile: p })}
+      onnewcredential={() => (dialog = { mode: 'credential', credential: null })}
+      oneditcredential={(c) => (dialog = { mode: 'credential', credential: c })}
       ondisconnect={disconnect}
     />
   {/if}
@@ -263,14 +272,18 @@
 </div>
 
 {#if dialog?.mode === 'quick'}
-  <ConnectionDialog mode="quick" {onconnected} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
+  <ConnectionDialog mode="quick" groups={groupNames(app.profiles)} credentials={app.credentials} {onconnected} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
 {:else if dialog?.mode === 'profile'}
   <ConnectionDialog
     mode="profile"
     profile={dialog.profile}
+    groups={groupNames(app.profiles)}
+    credentials={app.credentials}
     onsaved={() => app.loadProfiles()}
     onclose={() => (dialog = null)}
   />
+{:else if dialog?.mode === 'credential'}
+  <CredentialDialog credential={dialog.credential} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
 {/if}
 
 {#if prompt}

@@ -87,8 +87,8 @@ pub async fn connect(args: &ConnArgs, spec: &RemoteSpec) -> Result<Conn> {
         let config = Config::load().context("cannot read profiles")?;
         let profile = config
             .get(name)
-            .with_context(|| format!("no profile named {name:?} (see `oxfer profile list`)"))?
-            .clone();
+            .with_context(|| format!("no profile named {name:?} (see `oxfer profile list`)"))?;
+        let profile = config.resolve(profile)?;
         if !spec.has_path() {
             if let Some(dir) = &profile.remote_dir {
                 path = dir.clone();
@@ -151,7 +151,9 @@ async fn connect_ftp(
 async fn connect_profile(args: &ConnArgs, profile: &Profile) -> Result<Arc<dyn RemoteFs>> {
     let secrets = KeyringStore;
     let stored_password = || -> Result<Option<String>> {
-        Ok(secrets.get(&profile.name)?.map(|s| s.expose().to_string()))
+        Ok(secrets
+            .get(&profile.secret_key())?
+            .map(|s| s.expose().to_string()))
     };
     match profile.protocol {
         Protocol::Sftp => {

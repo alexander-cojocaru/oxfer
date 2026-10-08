@@ -2,13 +2,15 @@
   import Modal from './Modal.svelte';
   import { api, errorMessage } from '../lib/api';
   import { t } from '../lib/i18n';
-  import type { AuthDto, Profile, QuickAuth, RemoteProtocol, SessionInfo } from '../lib/types';
+  import type { AuthDto, Credential, Profile, QuickAuth, RemoteProtocol, SessionInfo } from '../lib/types';
 
   type AuthChoice = QuickAuth | 'interactive';
 
   let {
     mode,
     profile = null,
+    groups = [],
+    credentials = [],
     onconnected,
     onsaved,
     onclose,
@@ -16,6 +18,10 @@
     /** `quick`: connect now (optionally saving); `profile`: create/edit a saved profile. */
     mode: 'quick' | 'profile';
     profile?: Profile | null;
+    /** Existing group names, offered as suggestions. */
+    groups?: string[];
+    /** Saved credentials to choose from instead of entering user and auth. */
+    credentials?: Credential[];
     onconnected?: (s: SessionInfo) => void;
     onsaved?: (p: Profile) => void;
     onclose: () => void;
@@ -37,6 +43,10 @@
   let keyPath = $state(initial?.auth.method === 'keyFile' ? initial.auth.path : '');
   let password = $state('');
   let remoteDir = $state(initial?.remoteDir ?? '');
+  let group = $state(initial?.group ?? '');
+  // '' = enter user and authentication below
+  let credential = $state(initial?.credential ?? '');
+  const usesCredential = $derived(credential !== '');
   let insecureTls = $state(false);
   let saveAsProfile = $state(false);
   let busy = $state(false);
@@ -72,7 +82,7 @@
     host.trim() !== '' &&
       (!saving || name.trim() !== '') &&
       (port === '' || (/^\d+$/.test(port) && +port > 0 && +port < 65536)) &&
-      (auth !== 'keyFile' || keyPath.trim() !== ''),
+      (usesCredential || auth !== 'keyFile' || keyPath.trim() !== ''),
   );
 
   function profileAuth(): AuthDto {
@@ -94,9 +104,11 @@
       protocol,
       host: host.trim(),
       port: port ? Number(port) : null,
-      user: user.trim() || null,
-      auth: profileAuth(),
+      user: usesCredential ? null : user.trim() || null,
+      auth: usesCredential ? { method: 'agent' } : profileAuth(),
       remoteDir: remoteDir.trim() || null,
+      group: group.trim() || null,
+      credential: usesCredential ? credential : null,
     };
   }
 
@@ -110,7 +122,7 @@
         const saved = await api.saveProfile(
           mode === 'profile' ? (initial?.name ?? null) : null,
           buildProfile(),
-          auth === 'password' && password ? password : null,
+          !usesCredential && auth === 'password' && password ? password : null,
         );
         onsaved?.(saved);
         if (mode === 'profile') {
@@ -131,6 +143,7 @@
           keyPath: auth === 'keyFile' ? keyPath.trim() : null,
           remoteDir: remoteDir.trim() || null,
           insecureTls,
+          ...(usesCredential ? { credential } : {}),
         });
         onconnected?.(s);
       }
@@ -152,6 +165,15 @@
       <label class="field wide">
         <span>{t('profileName')}</span>
         <input bind:value={name} required data-autofocus={mode === 'profile' ? true : undefined} autocomplete="off" />
+      </label>
+      <label class="field wide">
+        <span>{t('group')}</span>
+        <input bind:value={group} list="profile-groups" placeholder={t('noGroup')} autocomplete="off" spellcheck="false" />
+        <datalist id="profile-groups">
+          {#each groups as g (g)}
+            <option value={g}></option>
+          {/each}
+        </datalist>
       </label>
     {/if}
     <label class="field">
@@ -183,32 +205,45 @@
         data-autofocus={mode === 'quick' ? true : undefined}
       />
     </label>
-    <label class="field">
-      <span>{t('user')}</span>
-      <input bind:value={user} spellcheck="false" autocomplete="off" placeholder={isSftp ? '' : 'anonymous'} />
-    </label>
-    <label class="field">
-      <span>{t('authentication')}</span>
-      <select bind:value={auth}>
-        {#each authChoices as c (c.value)}
-          <option value={c.value}>{c.label}</option>
-        {/each}
-      </select>
-    </label>
-    {#if auth === 'keyFile'}
+    {#if credentials.length}
       <label class="field wide">
-        <span>{t('keyFile')}</span>
-        <input bind:value={keyPath} class="mono" spellcheck="false" placeholder="~/.ssh/id_ed25519" />
+        <span>{t('credential')}</span>
+        <select bind:value={credential}>
+          <option value="">{t('noCredential')}</option>
+          {#each credentials as c (c.name)}
+            <option value={c.name}>{c.name}{c.user ? ` (${c.user})` : ''}</option>
+          {/each}
+        </select>
       </label>
     {/if}
-    {#if auth === 'password' || (auth === 'auto' && !saving)}
-      <div class="field wide">
-        <label class="field">
-          <span>{t('password')}</span>
-          <input type="password" bind:value={password} autocomplete="off" aria-describedby="password-hint" />
+    {#if !usesCredential}
+      <label class="field">
+        <span>{t('user')}</span>
+        <input bind:value={user} spellcheck="false" autocomplete="off" placeholder={isSftp ? '' : 'anonymous'} />
+      </label>
+      <label class="field">
+        <span>{t('authentication')}</span>
+        <select bind:value={auth}>
+          {#each authChoices as c (c.value)}
+            <option value={c.value}>{c.label}</option>
+          {/each}
+        </select>
+      </label>
+      {#if auth === 'keyFile'}
+        <label class="field wide">
+          <span>{t('keyFile')}</span>
+          <input bind:value={keyPath} class="mono" spellcheck="false" placeholder="~/.ssh/id_ed25519" />
         </label>
-        <small id="password-hint" class="hint">{saving ? t('passwordStoredHint') : t('passwordOnceHint')}</small>
-      </div>
+      {/if}
+      {#if auth === 'password' || (auth === 'auto' && !saving)}
+        <div class="field wide">
+          <label class="field">
+            <span>{t('password')}</span>
+            <input type="password" bind:value={password} autocomplete="off" aria-describedby="password-hint" />
+          </label>
+          <small id="password-hint" class="hint">{saving ? t('passwordStoredHint') : t('passwordOnceHint')}</small>
+        </div>
+      {/if}
     {/if}
     <label class="field wide">
       <span>{t('remoteDir')}</span>

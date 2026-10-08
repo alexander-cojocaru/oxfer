@@ -37,6 +37,12 @@ enum Command {
         #[command(subcommand)]
         action: profile::Action,
     },
+    /// Manage credentials that several profiles can share
+    #[command(alias = "cred")]
+    Credential {
+        #[command(subcommand)]
+        action: profile::CredentialAction,
+    },
     /// Interactive shell on a remote host
     #[command(alias = "connect")]
     Shell { remote: RemoteSpec },
@@ -102,6 +108,7 @@ async fn run(cli: Cli) -> Result<bool> {
             clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?;
         }
         Command::Profile { action } => profile::run(action)?,
+        Command::Credential { action } => profile::run_credential(action)?,
         Command::Shell { remote } => {
             let c = connect(conn, remote).await?;
             shell::run(c.fs, c.label, c.path.as_str()).await?;

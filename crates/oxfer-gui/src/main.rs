@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use oxfer_config::{Config, KeyringStore};
 use oxfer_gui::service::{
-    ConnectEnv, ConnectRequest, EntryDto, EventSink, ProfileDto, ProfileStore, PromptAnswer,
-    PromptBroker, PromptEvent, Prompter, SecretString, ServiceError, SessionInfo, SessionManager,
-    TransferEvent, TransferRequest,
+    ConnectEnv, ConnectRequest, CredentialDto, EntryDto, EventSink, ProfileDto, ProfileStore,
+    PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError, SessionInfo,
+    SessionManager, TransferEvent, TransferRequest,
 };
 use tauri::{Emitter, Manager, State};
 use tracing_subscriber::EnvFilter;
@@ -136,6 +136,29 @@ fn delete_profile(state: State<'_, AppState>, name: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
+fn list_credentials(state: State<'_, AppState>) -> CmdResult<Vec<CredentialDto>> {
+    state.svc.profiles().list_credentials()
+}
+
+#[tauri::command]
+fn save_credential(
+    state: State<'_, AppState>,
+    original: Option<String>,
+    credential: CredentialDto,
+    password: Option<SecretString>,
+) -> CmdResult<CredentialDto> {
+    state
+        .svc
+        .profiles()
+        .save_credential(original.as_deref(), credential, password)
+}
+
+#[tauri::command]
+fn delete_credential(state: State<'_, AppState>, name: String) -> CmdResult<()> {
+    state.svc.profiles().delete_credential(&name)
+}
+
+#[tauri::command]
 fn answer_prompt(state: State<'_, AppState>, id: u64, answer: PromptAnswer) -> CmdResult<()> {
     state.broker.answer(id, answer)
 }
@@ -198,6 +221,9 @@ fn main() {
             list_profiles,
             save_profile,
             delete_profile,
+            list_credentials,
+            save_credential,
+            delete_credential,
             answer_prompt,
         ])
         .run(tauri::generate_context!());

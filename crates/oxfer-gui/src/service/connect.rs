@@ -71,6 +71,9 @@ pub struct QuickConnect {
     /// Accept invalid FTPS certificates without asking (insecure).
     #[serde(default)]
     pub insecure_tls: bool,
+    /// Saved credential to use instead of `user`/`auth`/`password`/`key_path`.
+    #[serde(default)]
+    pub credential: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -353,8 +356,40 @@ pub(crate) async fn connect(
             let profile = profiles.get(&name)?;
             connect_profile(env, profiles, &profile, prompter).await
         }
-        ConnectRequest::Quick(q) => connect_quick(env, q, prompter).await,
+        ConnectRequest::Quick(q) => {
+            let q = apply_credential(profiles, q)?;
+            connect_quick(env, q, prompter).await
+        }
     }
+}
+
+/// Replace the user and authentication of a quick connect with those of its
+/// saved credential.
+fn apply_credential(profiles: &ProfileStore, mut q: QuickConnect) -> ServiceResult<QuickConnect> {
+    let Some(name) = q.credential.take().filter(|n| !n.trim().is_empty()) else {
+        return Ok(q);
+    };
+    let c = profiles.credential(&name)?;
+    q.user = c.user.clone();
+    q.password = None;
+    q.key_path = None;
+    q.auth = match &c.auth {
+        AuthMethod::Agent => QuickAuth::Agent,
+        AuthMethod::KeyFile { path } => {
+            q.key_path = Some(path.to_string_lossy().into_owned());
+            QuickAuth::KeyFile
+        }
+        AuthMethod::Password => {
+            q.password = profiles
+                .secrets()
+                .get(&c.secret_key())?
+                .map(|s| SecretString(s.expose().to_string()));
+            QuickAuth::Password
+        }
+        // Asked for while connecting.
+        AuthMethod::Interactive => QuickAuth::Password,
+    };
+    Ok(q)
 }
 
 async fn connect_profile(
@@ -408,7 +443,7 @@ async fn connect_profile(
             let password = match &profile.auth {
                 AuthMethod::Password => profiles
                     .secrets()
-                    .get(&profile.name)?
+                    .get(&profile.secret_key())?
                     .map(|s| s.expose().to_string()),
                 AuthMethod::Interactive => None,
                 _ if profile.user.is_none() => Some("anonymous@oxfer".into()),
