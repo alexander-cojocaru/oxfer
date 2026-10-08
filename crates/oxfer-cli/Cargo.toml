@@ -26,7 +26,9 @@ crossterm = "0.29.0"
 
 [dev-dependencies]
 oxfer-testutil = { path = "../oxfer-testutil" }
+portable-pty = "0.9.0"
 tempfile = "3.27.0"
+vt100 = "0.16.2"
 
 [[bin]]
 name = "oxfer"
