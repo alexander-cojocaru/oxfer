@@ -722,3 +722,142 @@ async fn sftp_end_to_end_with_host_key_prompt() {
     f.svc.disconnect(&s4.id).unwrap();
     f.svc.disconnect(&session.id).unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_reads_text_and_flags_binary() {
+    let f = fixture();
+    f.write("src/notes.txt", "hello\nworld\n");
+    std::fs::write(f.dir.path().join("src/blob.bin"), [0u8, 1, 2, 3]).unwrap();
+    let big = "x".repeat(oxfer_gui::service::PREVIEW_LIMIT + 10);
+    f.write("src/big.txt", &big);
+
+    let p = f
+        .svc
+        .read_preview(&f.remote, &f.p("src/notes.txt"))
+        .await
+        .unwrap();
+    assert_eq!(p.content.as_deref(), Some("hello\nworld\n"));
+    assert!(!p.binary && !p.truncated);
+    assert_eq!(p.size, 12);
+
+    let p = f
+        .svc
+        .read_preview(&f.remote, &f.p("src/blob.bin"))
+        .await
+        .unwrap();
+    assert!(p.binary && p.content.is_none());
+
+    let p = f
+        .svc
+        .read_preview(&f.remote, &f.p("src/big.txt"))
+        .await
+        .unwrap();
+    assert!(p.truncated);
+    assert_eq!(p.content.unwrap().len(), oxfer_gui::service::PREVIEW_LIMIT);
+
+    let e = f
+        .svc
+        .read_preview(&f.remote, &f.p("src"))
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, "invalid");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edited_remote_file_is_uploaded_on_save() {
+    let mut f = fixture();
+    f.write("dst/conf.ini", "a=1\n");
+    let opened: Arc<std::sync::Mutex<Vec<std::path::PathBuf>>> = Arc::default();
+    let log = opened.clone();
+    f.svc.set_opener(Arc::new(move |p: &Path| {
+        log.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    }));
+    let prompter = ScriptedPrompter::new([]);
+
+    let local = f
+        .svc
+        .open_in_editor(&f.remote, &f.p("dst/conf.ini"), prompter.clone())
+        .await
+        .unwrap();
+    let local = std::path::PathBuf::from(local);
+    assert_ne!(
+        local,
+        f.dir.path().join("dst/conf.ini"),
+        "remote files are copied"
+    );
+    assert_eq!(std::fs::read_to_string(&local).unwrap(), "a=1\n");
+    assert_eq!(opened.lock().unwrap().as_slice(), std::slice::from_ref(&local));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(local.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    // opening again reuses the copy
+    let again = f
+        .svc
+        .open_in_editor(&f.remote, &f.p("dst/conf.ini"), prompter.clone())
+        .await
+        .unwrap();
+    assert_eq!(std::path::PathBuf::from(again), local);
+
+    // saving uploads through a normal transfer
+    std::fs::write(&local, "a=2\nb=3\n").unwrap();
+    let id = loop {
+        let ev = tokio::time::timeout(Duration::from_secs(10), f.events.recv())
+            .await
+            .expect("no upload after saving")
+            .unwrap();
+        if let TransferEvent::Queued { transfer_id, .. } = ev {
+            break transfer_id;
+        }
+    };
+    let events = f.wait_done(id).await;
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            TransferEvent::Done {
+                completed: 1,
+                failed: 0,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
+    assert_eq!(f.read("dst/conf.ini"), "a=2\nb=3\n");
+    assert!(prompter.asked().is_empty());
+
+    // closing the session removes the copy
+    f.svc.disconnect(&f.remote).unwrap();
+    for _ in 0..50 {
+        if !local.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!local.parent().unwrap().exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_files_open_in_place() {
+    let f = fixture();
+    f.write("src/a.txt", "x");
+    let opened: Arc<std::sync::Mutex<Vec<std::path::PathBuf>>> = Arc::default();
+    let log = opened.clone();
+    f.svc.set_opener(Arc::new(move |p: &Path| {
+        log.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    }));
+    let at = f
+        .svc
+        .open_in_editor(LOCAL_SESSION, &f.p("src/a.txt"), ScriptedPrompter::new([]))
+        .await
+        .unwrap();
+    assert_eq!(at, f.p("src/a.txt"));
+    assert_eq!(opened.lock().unwrap()[0], f.dir.path().join("src/a.txt"));
+}

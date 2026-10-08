@@ -17,6 +17,8 @@ vi.mock('./lib/api', () => ({
       { name: 'notes.txt', path: `${path}/notes.txt`, kind: 'file', size: 12, modified: 0, permissions: 0o644 },
     ]),
     startTransfer: vi.fn().mockResolvedValue(1),
+    readPreview: vi.fn().mockResolvedValue({ content: 'hello world\nline 2', binary: false, truncated: false, size: 18 }),
+    openInEditor: vi.fn().mockResolvedValue('/home/u/notes.txt'),
     answerPrompt: vi.fn().mockResolvedValue(undefined),
     clearFinishedTransfers: vi.fn().mockResolvedValue(undefined),
     onTransferEvent: vi.fn(async (cb) => {
@@ -79,5 +81,23 @@ describe('App (smoke)', () => {
       retryOf: null,
     });
     expect(await screen.findByText('a.bin → /y')).toBeInTheDocument();
+  });
+
+  it('double-clicking a file previews it; F4 opens it in the editor', async () => {
+    render(App);
+    await waitFor(() => expect(screen.getAllByText('notes.txt')).toHaveLength(2));
+    await fireEvent.dblClick(screen.getAllByText('notes.txt')[0]);
+    const dialog = await screen.findByRole('dialog', { name: 'notes.txt' });
+    expect(api.readPreview).toHaveBeenCalledWith('local', '/home/u/notes.txt');
+    expect(await screen.findByLabelText('Contents of notes.txt')).toHaveTextContent('hello world line 2');
+    expect(dialog).toHaveTextContent('2 lines');
+    await fireEvent.click(screen.getByRole('button', { name: 'Open in editor' }));
+    expect(api.openInEditor).toHaveBeenCalledWith('local', '/home/u/notes.txt');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'notes.txt' })).not.toBeInTheDocument());
+
+    vi.mocked(api.openInEditor).mockClear();
+    await fireEvent.click(screen.getAllByText('notes.txt')[1]);
+    await fireEvent.keyDown(screen.getAllByRole('grid')[1], { key: 'F4' });
+    expect(api.openInEditor).toHaveBeenCalledWith('local', '/home/u/notes.txt');
   });
 });

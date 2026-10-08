@@ -47,7 +47,7 @@
     oncontextmenu?: (ev: MouseEvent, entry: Entry | null) => void;
     ondragstartrow?: (ev: DragEvent, entry: Entry) => void;
     ondropitems?: (ev: DragEvent, target: Entry | null) => void;
-    onkeyaction?: (action: 'delete' | 'rename' | 'properties' | 'copy') => void;
+    onkeyaction?: (action: 'delete' | 'rename' | 'properties' | 'copy' | 'preview' | 'edit') => void;
   } = $props();
 
   const listId = `fl-${Math.random().toString(36).slice(2, 9)}`;
@@ -145,6 +145,12 @@
         break;
       case 'F5':
         onkeyaction?.('copy');
+        break;
+      case 'F3':
+        onkeyaction?.('preview');
+        break;
+      case 'F4':
+        onkeyaction?.('edit');
         break;
       case 'a':
       case 'A':

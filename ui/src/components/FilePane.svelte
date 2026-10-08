@@ -16,6 +16,7 @@
   import Breadcrumb from './Breadcrumb.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
   import ContextMenu, { type MenuEntry } from './ContextMenu.svelte';
+  import PreviewDialog from './PreviewDialog.svelte';
   import FileList from './FileList.svelte';
   import Icon from './Icon.svelte';
   import InputDialog from './InputDialog.svelte';
@@ -61,6 +62,7 @@
     | { kind: 'mkdir' }
     | { kind: 'delete'; paths: string[] }
     | { kind: 'properties'; entry: Entry }
+    | { kind: 'preview'; entry: Entry }
     | null
   >(null);
 
@@ -168,8 +170,35 @@
         return;
       }
       void navigate(e.path);
+    } else if (e.kind === 'file') {
+      dialog = { kind: 'preview', entry: e };
     } else {
       dialog = { kind: 'properties', entry: e };
+    }
+  }
+
+  /** The focused entry, or the only selected one. */
+  function currentFile(): Entry | undefined {
+    const e = selectedEntries.length === 1 ? selectedEntries[0] : entries.find((x) => x.path === selection.focus);
+    return e?.kind === 'file' ? e : undefined;
+  }
+
+  export function previewSelected() {
+    const e = currentFile();
+    if (e) dialog = { kind: 'preview', entry: e };
+    else app.toast('info', t('noFileSelected'));
+  }
+
+  export async function editInEditor(e: Entry | undefined = currentFile()) {
+    if (!e || !session) {
+      app.toast('info', t('noFileSelected'));
+      return;
+    }
+    try {
+      await api.openInEditor(session.id, e.path);
+      if (session.protocol !== 'local') app.toast('info', t('editingRemote', { name: e.name }), 8000);
+    } catch (err) {
+      app.error(err);
     }
   }
 
@@ -241,6 +270,13 @@
     if (entry && (entry.kind === 'dir' || entry.kind === 'symlink')) {
       items.push({ label: t('open'), action: () => open(entry), shortcut: 'Enter' });
     }
+    if (entry?.kind === 'file') {
+      items.push(
+        { label: t('preview'), action: () => (dialog = { kind: 'preview', entry }), shortcut: 'F3' },
+        { label: t('openInEditor'), action: () => editInEditor(entry), shortcut: 'F4' },
+        'separator',
+      );
+    }
     items.push(
       { label: t('copyToOther'), action: oncopy, disabled: !has, shortcut: 'F5' },
       'separator',
@@ -281,8 +317,10 @@
     ontransfer({ fromSession: payload.session, paths: payload.paths, destDir });
   }
 
-  function onkeyaction(action: 'delete' | 'rename' | 'properties' | 'copy') {
-    if (action === 'delete') deleteSelected();
+  function onkeyaction(action: 'delete' | 'rename' | 'properties' | 'copy' | 'preview' | 'edit') {
+    if (action === 'preview') previewSelected();
+    else if (action === 'edit') void editInEditor();
+    else if (action === 'delete') deleteSelected();
     else if (action === 'rename') renameSelected();
     else if (action === 'properties') showProperties();
     else oncopy();
@@ -413,6 +451,16 @@
   />
 {:else if dialog?.kind === 'properties'}
   <PropertiesDialog entry={dialog.entry} onclose={() => (dialog = null)} />
+{:else if dialog?.kind === 'preview' && session}
+  <PreviewDialog
+    session={session.id}
+    entry={dialog.entry}
+    oneditor={(e) => {
+      dialog = null;
+      void editInEditor(e);
+    }}
+    onclose={() => (dialog = null)}
+  />
 {/if}
 
 <style>

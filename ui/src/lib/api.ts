@@ -7,6 +7,7 @@ import type {
   ConnectRequest,
   Credential,
   Entry,
+  FilePreview,
   Profile,
   PromptAnswer,
   PromptEvent,
@@ -29,6 +30,9 @@ export const api = {
   rename: (session: SessionId, from: string, to: string) =>
     invoke<void>('rename', { session, from, to }),
   delete: (session: SessionId, paths: string[]) => invoke<void>('delete', { session, paths }),
+  readPreview: (session: SessionId, path: string) => invoke<FilePreview>('read_preview', { session, path }),
+  /** Returns the path of the file the editor opened (a local copy for remote files). */
+  openInEditor: (session: SessionId, path: string) => invoke<string>('open_in_editor', { session, path }),
 
   startTransfer: (request: TransferRequest) => invoke<number>('start_transfer', { request }),
   pauseTransfer: (id: number) => invoke<void>('pause_transfer', { id }),
@@ -42,15 +46,15 @@ export const api = {
     invoke<Profile>('save_profile', { original, profile, password }),
   deleteProfile: (name: string) => invoke<void>('delete_profile', { name }),
 
-  answerPrompt: (id: number, answer: PromptAnswer) => invoke<void>('answer_prompt', { id, answer }),
-
-  onTransferEvent: (cb: (e: TransferEvent) => void): Promise<UnlistenFn> =>
-    listen<TransferEvent>('transfer-event', (e) => cb(e.payload)),
   listCredentials: () => invoke<Credential[]>('list_credentials'),
   saveCredential: (original: string | null, credential: Credential, password: string | null) =>
     invoke<Credential>('save_credential', { original, credential, password }),
   deleteCredential: (name: string) => invoke<void>('delete_credential', { name }),
 
+  answerPrompt: (id: number, answer: PromptAnswer) => invoke<void>('answer_prompt', { id, answer }),
+
+  onTransferEvent: (cb: (e: TransferEvent) => void): Promise<UnlistenFn> =>
+    listen<TransferEvent>('transfer-event', (e) => cb(e.payload)),
   onPrompt: (cb: (e: PromptEvent) => void): Promise<UnlistenFn> =>
     listen<PromptEvent>('prompt', (e) => cb(e.payload)),
 };

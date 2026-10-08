@@ -1,8 +1,9 @@
 //! [`SessionManager`]: open sessions, file operations and running transfers.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use oxfer_core::transfer::{Control, Job, Plan, Transfer};
 use oxfer_core::{remove_all, LocalFs, RemoteFs, RemotePath};
@@ -10,12 +11,13 @@ use tokio_util::sync::CancellationToken;
 
 use super::connect::{self, ConnectEnv, ConnectRequest};
 use super::dto::{EntryDto, ProtocolDto, SessionInfo};
+use super::editor::{self, FilePreview, Opener};
 use super::error::{ServiceError, ServiceResult};
 use super::profiles::ProfileStore;
 use super::prompt::Prompter;
 use super::transfers::{
-    conflict_resolver, core_options, forward_events, EventSink, SkippedDto, TransferEvent,
-    TransferRequest, TransferState,
+    conflict_resolver, core_options, forward_events, EventSink, OverwriteDto, SkippedDto,
+    TransferEvent, TransferOptionsDto, TransferRequest, TransferState,
 };
 
 /// Id of the built-in local file system session.
@@ -43,6 +45,10 @@ pub struct SessionManager {
     sink: Arc<dyn EventSink>,
     profiles: ProfileStore,
     env: ConnectEnv,
+    opener: RwLock<Opener>,
+    /// Remote files open in an editor: (session, path) -> local copy.
+    edits: Mutex<HashMap<(String, String), PathBuf>>,
+    next_edit: AtomicU64,
 }
 
 fn local_home() -> String {
@@ -101,7 +107,91 @@ impl SessionManager {
             sink,
             profiles,
             env,
+            opener: RwLock::new(editor::system_opener()),
+            edits: Mutex::new(HashMap::new()),
+            next_edit: AtomicU64::new(1),
         })
+    }
+
+    /// Replace how files are opened in an editor (tests, embedders).
+    pub fn set_opener(&self, opener: Opener) {
+        *self.opener.write().unwrap_or_else(|e| e.into_inner()) = opener;
+    }
+
+    async fn open_local(&self, path: &Path) -> ServiceResult<()> {
+        let opener = self
+            .opener
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || opener(&path))
+            .await
+            .map_err(|e| ServiceError::new("internal", e.to_string()))?
+            .map_err(|e| ServiceError::new("io", format!("cannot open an editor: {e}")))
+    }
+
+    /// The first [`PREVIEW_LIMIT`](editor::PREVIEW_LIMIT) bytes of a file as text.
+    pub async fn read_preview(&self, session: &str, path: &str) -> ServiceResult<FilePreview> {
+        let fs = self.fs(session)?;
+        editor::read_preview(&*fs, &check_path(path)?).await
+    }
+
+    /// Open a file in the text editor. Remote files are edited as a local
+    /// copy that is uploaded back whenever it is saved, until the session closes.
+    pub async fn open_in_editor(
+        self: &Arc<Self>,
+        session: &str,
+        path: &str,
+        prompter: Arc<dyn Prompter>,
+    ) -> ServiceResult<String> {
+        let remote = check_path(path)?;
+        let fs = self.fs(session)?;
+        if session == LOCAL_SESSION {
+            self.open_local(Path::new(remote.as_str())).await?;
+            return Ok(remote.to_string());
+        }
+        let key = (session.to_string(), remote.to_string());
+        let existing = lock(&self.edits).get(&key).cloned();
+        if let Some(local) = existing {
+            self.open_local(&local).await?;
+            return Ok(local.to_string_lossy().into_owned());
+        }
+        let entry = fs.stat(&remote).await?;
+        if entry.kind != oxfer_core::EntryKind::File {
+            return Err(ServiceError::invalid(format!("{remote} is not a file")));
+        }
+        if entry.size > editor::EDIT_LIMIT {
+            return Err(ServiceError::invalid(format!(
+                "{remote} is too large to edit ({} bytes)",
+                entry.size
+            )));
+        }
+        let parent = remote
+            .parent()
+            .ok_or_else(|| ServiceError::invalid(format!("{remote} has no parent directory")))?;
+
+        let dir = std::env::temp_dir().join(format!(
+            "oxfer-edit-{}-{}",
+            std::process::id(),
+            self.next_edit.fetch_add(1, Ordering::Relaxed)
+        ));
+        create_private_dir(&dir)?;
+        let local = dir.join(editor::local_name(&remote));
+        if let Err(e) = editor::download(&*fs, &remote, &local).await {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(e);
+        }
+        lock(&self.edits).insert(key.clone(), local.clone());
+        tokio::spawn(watch_edit(
+            Arc::downgrade(self),
+            key,
+            local.clone(),
+            parent,
+            prompter,
+        ));
+        self.open_local(&local).await?;
+        Ok(local.to_string_lossy().into_owned())
     }
 
     pub fn profiles(&self) -> &ProfileStore {
@@ -449,5 +539,65 @@ impl SessionManager {
     /// Drop finished transfers from the registry.
     pub fn clear_finished(&self) {
         lock(&self.transfers).retain(|_, t| !lock(&t.state).done);
+    }
+}
+
+/// A directory only the current user can read (it holds copies of remote files).
+fn create_private_dir(dir: &Path) -> ServiceResult<()> {
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(dir)?;
+    Ok(())
+}
+
+/// Upload the edited copy `local` to `remote_dir` of `key.0` after every
+/// save; stop (and delete the copy) when the session or the copy is gone.
+async fn watch_edit(
+    mgr: Weak<SessionManager>,
+    key: (String, String),
+    local: PathBuf,
+    remote_dir: RemotePath,
+    prompter: Arc<dyn Prompter>,
+) {
+    let (session, _) = &key;
+    let mut uploaded = editor::stamp(&local);
+    let mut pending = uploaded;
+    loop {
+        tokio::time::sleep(editor::WATCH_INTERVAL).await;
+        let Some(m) = mgr.upgrade() else { break };
+        if m.fs(session).is_err() {
+            break;
+        }
+        let Some(now) = editor::stamp(&local) else {
+            break;
+        };
+        // Upload once the file has stopped changing for one interval.
+        if Some(now) == uploaded || Some(now) != pending {
+            pending = Some(now);
+            continue;
+        }
+        uploaded = Some(now);
+        let req = TransferRequest {
+            src_session: LOCAL_SESSION.into(),
+            dst_session: session.clone(),
+            sources: vec![RemotePath::from_local(&local.to_string_lossy()).to_string()],
+            dest_dir: remote_dir.to_string(),
+            options: TransferOptionsDto {
+                overwrite: OverwriteDto::Overwrite,
+                resume: false,
+                verify: false,
+                concurrency: Some(1),
+            },
+        };
+        if let Err(e) = m.spawn_transfer(req, None, None, prompter.clone()) {
+            tracing::warn!("cannot upload edited {}: {}", key.1, e.message);
+        }
+    }
+    if let Some(m) = mgr.upgrade() {
+        lock(&m.edits).remove(&key);
+    }
+    if let Some(dir) = local.parent() {
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
