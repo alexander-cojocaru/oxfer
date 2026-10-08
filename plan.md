@@ -63,6 +63,20 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 
 **Early decision:** `russh` (pure Rust, async, easy to build) vs `ssh2` (mature, C dependency). Prototype with `russh` first.
 
+## Status
+
+| Milestone | State |
+|---|---|
+| M0 Scaffolding | done |
+| M1 SFTP basics | done (password / key / agent, known_hosts TOFU, integration tests vs real sshd) |
+| M2 Interactive shell | done |
+| M3 Transfer engine | done |
+| M4 FTP / FTPS | done (plain FTP tested against a mock server; FTPS untested) |
+| M5 Config & profiles | done except ProxyJump connections |
+| M6 Desktop GUI | in progress |
+| M7 TUI | done (unit/render tests only; not exercised in a real terminal) |
+| M8 Polish & release | completions, man page, release workflow, benchmarks, property tests done; Homebrew formula not done |
+
 ## Milestones
 
 ### M0 — Scaffolding
@@ -125,7 +139,7 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 - Sanitize remote filenames to prevent path traversal on download (`../`).
 
 ## Open questions
-- Library-first or CLI-first release? (Suggest CLI-first, extract library as it stabilizes.)
+- Library-first or CLI-first release? Decided: CLI-first; crates stay unpublished for now.
 - GUI framework: Tauri (recommended: reuses Rust core, small binaries, web UI skills) vs a pure-Rust UI (`egui`, `iced`, `slint`) vs a local web server UI?
 - Frontend framework: Svelte (lean) or React (larger ecosystem)?
 - Minimum supported Rust version policy?

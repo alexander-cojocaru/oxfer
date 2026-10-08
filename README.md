@@ -33,6 +33,22 @@ Common options: `-P <port>`, `-i <key>`, `--agent`, `--known-hosts <file>`.
 Without `-i`/`--agent`, oxfer tries the ssh-agent, then `~/.ssh/id_*`, then asks
 for a password.
 
+## Performance
+
+Loopback comparison against OpenSSH `sftp` (Apple silicon, release build,
+`cargo run --release -p oxfer-cli --example bench`; loopback measures client
+overhead, not network speed):
+
+| scenario | oxfer | sftp |
+|---|---|---|
+| upload 256 MiB file | 0.90 s | 0.40 s |
+| download 256 MiB file | 0.51 s | 0.37 s |
+| upload 1000 × 4 KiB files | 0.42 s | 0.24 s |
+| download 1000 × 4 KiB files | 0.19 s | 0.27 s |
+
+Large single-file transfers are currently slower than OpenSSH, which keeps more
+requests in flight; closing that gap is future work.
+
 ## Layout
 
 - `crates/oxfer-core` – `RemoteFs` trait, `LocalFs`, errors, transfer engine
