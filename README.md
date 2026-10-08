@@ -51,13 +51,15 @@ overhead, not network speed):
 
 | scenario | oxfer | sftp |
 |---|---|---|
-| upload 256 MiB file | 0.90 s | 0.40 s |
-| download 256 MiB file | 0.51 s | 0.37 s |
-| upload 1000 × 4 KiB files | 0.42 s | 0.24 s |
-| download 1000 × 4 KiB files | 0.19 s | 0.27 s |
+| upload 256 MiB file | 0.20 s | 0.34 s |
+| download 256 MiB file | 0.16 s | 0.37 s |
+| upload 1000 × 4 KiB files | 0.41 s | 0.23 s |
+| download 1000 × 4 KiB files | 0.24 s | 0.27 s |
 
-Large single-file transfers are currently slower than OpenSSH, which keeps more
-requests in flight; closing that gap is future work.
+Medians of three runs; the large upload occasionally takes up to 0.5 s.
+oxfer prefers AES-GCM where the CPU has AES instructions and keeps 64 SFTP
+requests in flight per file. Many small uploads are still slower than OpenSSH,
+because each file costs several round trips (stat, open, close, stat, rename).
 
 ## Layout
 
