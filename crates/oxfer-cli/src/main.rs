@@ -4,6 +4,7 @@ mod profile;
 mod progress;
 mod remote;
 mod shell;
+mod tui;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -39,6 +40,8 @@ enum Command {
     /// Interactive shell on a remote host
     #[command(alias = "connect")]
     Shell { remote: RemoteSpec },
+    /// Dual-pane terminal file manager
+    Tui { remote: RemoteSpec },
     /// List a remote directory
     Ls { remote: RemoteSpec },
     /// Show metadata of a remote path
@@ -102,6 +105,10 @@ async fn run(cli: Cli) -> Result<bool> {
         Command::Shell { remote } => {
             let c = connect(conn, remote).await?;
             shell::run(c.fs, c.label, c.path.as_str()).await?;
+        }
+        Command::Tui { remote } => {
+            let c = connect(conn, remote).await?;
+            tui::run(c.fs, c.label, c.path.as_str()).await?;
         }
         Command::Ls { remote } => {
             let c = connect(conn, remote).await?;

@@ -21,6 +21,8 @@ directories = "6.0.0"
 clap_complete = "4.6.11"
 clap_mangen = "0.3.3"
 oxfer-config = { version = "0.1.0", path = "../oxfer-config" }
+ratatui = "0.30.2"
+crossterm = "0.29.0"
 
 [dev-dependencies]
 oxfer-testutil = { path = "../oxfer-testutil" }
