@@ -162,6 +162,50 @@ fn map_connect_err(e: HandlerError) -> Error {
     }
 }
 
+/// SSH settings tuned for bulk transfer: a larger receive window lets the
+/// server keep more data in flight, and Nagle only delays pipelined requests.
+fn ssh_config() -> client::Config {
+    client::Config {
+        window_size: 16 * 1024 * 1024,
+        nodelay: true,
+        preferred: preferred_algorithms(),
+        ..Default::default()
+    }
+}
+
+/// russh lists ChaCha20-Poly1305 first. Where the CPU has AES instructions
+/// AES-GCM is several times faster, so offer it first (like OpenSSH does).
+fn preferred_algorithms() -> russh::Preferred {
+    use russh::cipher;
+    let mut p = russh::Preferred::default();
+    if aes_hardware() {
+        let mut order = p.cipher.to_vec();
+        order.retain(|c| *c != cipher::AES_256_GCM);
+        order.insert(0, cipher::AES_256_GCM);
+        p.cipher = order.into();
+    }
+    p
+}
+
+fn aes_hardware() -> bool {
+    #[cfg(target_arch = "aarch64")]
+    return std::arch::is_aarch64_feature_detected!("aes");
+    #[cfg(target_arch = "x86_64")]
+    return std::arch::is_x86_feature_detected!("aes")
+        && std::arch::is_x86_feature_detected!("pclmulqdq");
+    #[allow(unreachable_code)]
+    false
+}
+
+/// Keep more read/write requests outstanding per file (OpenSSH `sftp` uses 64).
+fn sftp_config() -> russh_sftp::client::Config {
+    russh_sftp::client::Config {
+        max_concurrent_reads: 64,
+        max_concurrent_writes: 64,
+        ..Default::default()
+    }
+}
+
 type Keepalive = Vec<Box<dyn std::any::Any + Send + Sync>>;
 
 /// Open an authenticated SSH session, tunnelling through `opts.jump` if set.
@@ -177,7 +221,7 @@ fn establish<'a>(
             verifier: opts.verifier.clone(),
             known_hosts: opts.known_hosts.clone(),
         };
-        let config = Arc::new(client::Config::default());
+        let config = Arc::new(ssh_config());
         let mut session = match &opts.jump {
             None => client::connect(config, (opts.host.as_str(), opts.port), handler)
                 .await
@@ -213,7 +257,7 @@ impl SftpFs {
             .request_subsystem(true, "sftp")
             .await
             .map_err(conn_err)?;
-        let sftp = SftpSession::new(channel.into_stream())
+        let sftp = SftpSession::new_with_config(channel.into_stream(), sftp_config())
             .await
             .map_err(|e| Error::Protocol(e.to_string()))?;
         keep.push(Box::new(session));
