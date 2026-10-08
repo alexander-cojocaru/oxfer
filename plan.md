@@ -71,7 +71,7 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 | M1 SFTP basics | done (password / key / agent, known_hosts TOFU, integration tests vs real sshd) |
 | M2 Interactive shell | done |
 | M3 Transfer engine | done |
-| M4 FTP / FTPS | done (plain FTP tested against a mock server; FTPS untested) |
+| M4 FTP / FTPS | done (plain FTP and FTPS explicit+implicit tested against mock servers, incl. certificate verification; no real-world FTP server tried) |
 | M5 Config & profiles | done (incl. ProxyJump chains; profile names as jump hosts unsupported) |
 | M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS, Linux build untested) |
 | M7 TUI | done (unit/render tests plus a pseudo-terminal test driving a real session) |
