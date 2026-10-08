@@ -1,16 +1,19 @@
-//! Profiles, `~/.ssh/config` resolution and credential storage for oxfer.
+//! Profiles, shared credentials, `~/.ssh/config` resolution and secret storage
+//! for oxfer.
 //!
 //! `ProxyJump` (profile field or `~/.ssh/config`) becomes a chain of
 //! [`oxfer_sftp::ConnectOptions::jump`] hops; jump hosts name hosts as
 //! `[user@]host[:port]` or ssh_config aliases (profile names are not resolved).
 
 mod config;
+mod credential;
 mod jump;
 mod profile;
 pub mod secrets;
 pub mod ssh_config;
 
 pub use config::Config;
+pub use credential::{Credential, CREDENTIAL_SECRET_PREFIX};
 pub use jump::jump_chain;
 pub use profile::{AuthMethod, Profile, Protocol};
 pub use secrets::{KeyringStore, MemoryStore, Secret, SecretStore};
@@ -51,4 +54,12 @@ pub enum Error {
     WrongProtocol(&'static str),
     #[error("invalid ProxyJump hop: {0}")]
     InvalidJump(String),
+    #[error("invalid credential: {0}")]
+    InvalidCredential(String),
+    #[error("credential '{0}' already exists")]
+    DuplicateCredential(String),
+    #[error("credential '{0}' not found")]
+    UnknownCredential(String),
+    #[error("credential '{name}' is used by {profiles}")]
+    CredentialInUse { name: String, profiles: String },
 }

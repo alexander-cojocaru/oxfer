@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   ConnectRequest,
+  Credential,
   Entry,
   Profile,
   PromptAnswer,
@@ -45,6 +46,11 @@ export const api = {
 
   onTransferEvent: (cb: (e: TransferEvent) => void): Promise<UnlistenFn> =>
     listen<TransferEvent>('transfer-event', (e) => cb(e.payload)),
+  listCredentials: () => invoke<Credential[]>('list_credentials'),
+  saveCredential: (original: string | null, credential: Credential, password: string | null) =>
+    invoke<Credential>('save_credential', { original, credential, password }),
+  deleteCredential: (name: string) => invoke<void>('delete_credential', { name }),
+
   onPrompt: (cb: (e: PromptEvent) => void): Promise<UnlistenFn> =>
     listen<PromptEvent>('prompt', (e) => cb(e.payload)),
 };

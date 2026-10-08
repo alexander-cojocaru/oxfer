@@ -4,7 +4,8 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n';
-  import type { Profile, SessionInfo } from '../lib/types';
+  import { groupProfiles } from '../lib/profiles';
+  import type { Credential, Profile, SessionInfo } from '../lib/types';
 
   let {
     connecting,
@@ -12,6 +13,8 @@
     onquickconnect,
     onnewprofile,
     oneditprofile,
+    onnewcredential,
+    oneditcredential,
     ondisconnect,
   }: {
     connecting: string | null;
@@ -19,11 +22,66 @@
     onquickconnect: () => void;
     onnewprofile: () => void;
     oneditprofile: (p: Profile) => void;
+    onnewcredential: () => void;
+    oneditcredential: (c: Credential) => void;
     ondisconnect: (s: SessionInfo) => void;
   } = $props();
 
   let confirmDelete = $state<Profile | null>(null);
+  let confirmDeleteCredential = $state<Credential | null>(null);
+
+  async function removeCredential(c: Credential) {
+    confirmDeleteCredential = null;
+    try {
+      await api.deleteCredential(c.name);
+      await app.loadProfiles();
+    } catch (e) {
+      app.error(e);
+    }
+  }
+
+  function authLabel(a: Credential['auth']) {
+    switch (a.method) {
+      case 'agent':
+        return t('authAgent');
+      case 'keyFile':
+        return t('authKeyFile');
+      case 'password':
+        return t('authPassword');
+      default:
+        return t('authInteractive');
+    }
+  }
   const remotes = $derived(app.sessions.filter((s) => s.protocol !== 'local'));
+
+  let query = $state('');
+  const groups = $derived(groupProfiles(app.profiles, query));
+
+  // Collapsed groups survive restarts; storage may be unavailable.
+  const COLLAPSED_KEY = 'oxfer.collapsedGroups';
+  function loadCollapsed(): Set<string> {
+    try {
+      const v: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]');
+      return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  }
+  let collapsed = $state(loadCollapsed());
+
+  function toggleGroup(name: string) {
+    const next = new Set(collapsed);
+    if (!next.delete(name)) next.add(name);
+    collapsed = next;
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+    } catch {
+      // not persisted; fine
+    }
+  }
+
+  // While searching, show every match regardless of collapsed groups.
+  const isOpen = (name: string | null) => name === null || query.trim() !== '' || !collapsed.has(name);
 
   async function remove(p: Profile) {
     confirmDelete = null;
@@ -71,27 +129,96 @@
   {#if app.profiles.length === 0}
     <p class="empty">{t('noProfiles')}</p>
   {:else}
-    <ul>
-      {#each app.profiles as p (p.name)}
-        <li class="item profile">
-          <button
-            type="button"
-            class="connect"
-            disabled={connecting !== null}
-            aria-label="{t('connect')} {p.name}"
-            onclick={() => onconnectprofile(p)}
-          >
-            <Icon name="server" size={14} />
-            <span class="label">
-              <span class="name">{p.name}</span>
-              <span class="sub">{protoLabel(p.protocol)} · {p.user ? `${p.user}@` : ''}{p.host}</span>
-            </span>
-            {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
-          </button>
-          <button type="button" class="btn icon ghost" aria-label="{t('editProfile')} {p.name}" title={t('editProfile')} onclick={() => oneditprofile(p)}>
+    <div class="search">
+      <Icon name="search" size={14} />
+      <input
+        bind:value={query}
+        type="search"
+        placeholder={t('searchProfiles')}
+        aria-label={t('searchProfiles')}
+        spellcheck="false"
+        autocomplete="off"
+        onkeydown={(e) => {
+          if (e.key === 'Escape' && query) {
+            e.stopPropagation();
+            query = '';
+          }
+        }}
+      />
+    </div>
+    {#if groups.length === 0}
+      <p class="empty">{t('noProfileMatches')}</p>
+    {/if}
+    {#each groups as g (g.name ?? '')}
+      {#if g.name !== null}
+        {@const open = isOpen(g.name)}
+        <button
+          type="button"
+          class="group"
+          aria-expanded={open}
+          onclick={() => toggleGroup(g.name!)}
+        >
+          <span class="chevron" class:open aria-hidden="true">▸</span>
+          <Icon name="folder" size={14} />
+          <span class="group-name">{g.name}</span>
+          <span class="count">{g.profiles.length}</span>
+        </button>
+      {/if}
+      {#if isOpen(g.name)}
+        <ul class:nested={g.name !== null} aria-label={g.name ?? t('savedProfiles')}>
+          {#each g.profiles as p (p.name)}
+            <li class="item profile">
+              <button
+                type="button"
+                class="connect"
+                disabled={connecting !== null}
+                aria-label="{t('connect')} {p.name}"
+                onclick={() => onconnectprofile(p)}
+              >
+                <Icon name="server" size={14} />
+                <span class="label">
+                  <span class="name">{p.name}</span>
+                  <span class="sub">
+                    {protoLabel(p.protocol)} · {p.user && !p.credential ? `${p.user}@` : ''}{p.host}{#if p.credential}
+                      · <Icon name="key" size={10} /> {p.credential}{/if}
+                  </span>
+                </span>
+                {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
+              </button>
+              <button type="button" class="btn icon ghost" aria-label="{t('editProfile')} {p.name}" title={t('editProfile')} onclick={() => oneditprofile(p)}>
+                <Icon name="edit" size={14} />
+              </button>
+              <button type="button" class="btn icon ghost" aria-label="{t('deleteProfile')} {p.name}" title={t('deleteProfile')} onclick={() => (confirmDelete = p)}>
+                <Icon name="trash" size={14} />
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/each}
+  {/if}
+
+  <div class="head">
+    <h3>{t('credentials')}</h3>
+    <button type="button" class="btn icon ghost" aria-label={t('newCredential')} title={t('newCredential')} onclick={onnewcredential}>
+      <Icon name="plus" size={14} />
+    </button>
+  </div>
+  {#if app.credentials.length === 0}
+    <p class="empty">{t('noCredentials')}</p>
+  {:else}
+    <ul aria-label={t('credentials')}>
+      {#each app.credentials as c (c.name)}
+        <li class="item">
+          <Icon name="key" size={14} />
+          <span class="label">
+            <span class="name">{c.name}</span>
+            <span class="sub">{c.user ? `${c.user} · ` : ''}{authLabel(c.auth)}</span>
+          </span>
+          <button type="button" class="btn icon ghost" aria-label="{t('editCredential')} {c.name}" title={t('editCredential')} onclick={() => oneditcredential(c)}>
             <Icon name="edit" size={14} />
           </button>
-          <button type="button" class="btn icon ghost" aria-label="{t('deleteProfile')} {p.name}" title={t('deleteProfile')} onclick={() => (confirmDelete = p)}>
+          <button type="button" class="btn icon ghost" aria-label="{t('deleteCredential')} {c.name}" title={t('deleteCredential')} onclick={() => (confirmDeleteCredential = c)}>
             <Icon name="trash" size={14} />
           </button>
         </li>
@@ -99,6 +226,18 @@
     </ul>
   {/if}
 </aside>
+
+{#if confirmDeleteCredential}
+  {@const c = confirmDeleteCredential}
+  <ConfirmDialog
+    title={t('deleteCredential')}
+    message={t('deleteCredentialConfirm', { name: c.name })}
+    confirmLabel={t('delete')}
+    danger
+    onconfirm={() => removeCredential(c)}
+    oncancel={() => (confirmDeleteCredential = null)}
+  />
+{/if}
 
 {#if confirmDelete}
   {@const p = confirmDelete}
@@ -145,6 +284,7 @@
     padding: 0;
   }
   .item {
+    color: var(--fg-muted);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -203,6 +343,68 @@
     border-radius: 50%;
     background: var(--ok);
     flex: none;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 2px 4px;
+    padding-left: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    color: var(--fg-faint);
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    outline: none;
+  }
+  .search:focus-within {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 6px;
+    margin-top: 4px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-weight: 500;
+    text-align: left;
+  }
+  .group:hover {
+    background: var(--bg-hover);
+  }
+  .group-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chevron {
+    width: 10px;
+    font-size: 10px;
+    transition: transform 0.12s;
+  }
+  .chevron.open {
+    transform: rotate(90deg);
+  }
+  .count {
+    font-size: 11px;
+    color: var(--fg-faint);
+  }
+  ul.nested {
+    padding-left: 14px;
   }
   .empty {
     color: var(--fg-faint);

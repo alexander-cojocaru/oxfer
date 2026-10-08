@@ -79,6 +79,7 @@ describe('ConnectionDialog', () => {
     const save = screen.getByRole('button', { name: 'Save' });
     expect(save).toBeDisabled(); // key path required
     await user.type(screen.getByLabelText('Key file'), '~/.ssh/id_ed25519');
+    await user.type(screen.getByLabelText('Group'), '  Work ');
     await user.click(save);
     expect(mocked.saveProfile).toHaveBeenCalledWith(
       null,
@@ -90,6 +91,8 @@ describe('ConnectionDialog', () => {
         user: null,
         auth: { method: 'keyFile', path: '~/.ssh/id_ed25519' },
         remoteDir: null,
+        group: 'Work',
+        credential: null,
       },
       null,
     );
@@ -108,14 +111,47 @@ describe('ConnectionDialog', () => {
       user: 'u',
       auth: { method: 'password' as const },
       remoteDir: '/pub',
+      group: 'ACME',
+      credential: null,
     };
     render(ConnectionDialog, { props: { mode: 'profile', profile, onclose: vi.fn() } });
     expect(screen.getByLabelText('Host')).toHaveValue('h');
+    expect(screen.getByLabelText('Group')).toHaveValue('ACME');
     const name = screen.getByLabelText('Profile name');
     await user.clear(name);
     await user.type(name, 'new');
     await user.type(screen.getByLabelText('Password'), 'pw');
     await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(mocked.saveProfile).toHaveBeenCalledWith('old', { ...profile, name: 'new' }, 'pw');
+  });
+
+  it('a chosen credential replaces user and login fields', async () => {
+    const user = userEvent.setup();
+    mocked.connect.mockResolvedValue(session);
+    mocked.saveProfile.mockImplementation(async (_o, p) => p);
+    const credentials = [{ name: 'deploy', user: 'ci', auth: { method: 'password' as const } }];
+    render(ConnectionDialog, { props: { mode: 'quick', credentials, onclose: vi.fn() } });
+    await user.type(screen.getByLabelText('Host'), 'example.com');
+    await user.selectOptions(screen.getByLabelText('Credential'), 'deploy');
+    expect(screen.queryByLabelText('User')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(mocked.connect.mock.calls[0][0]).toMatchObject({ kind: 'quick', host: 'example.com', credential: 'deploy' });
+  });
+
+  it('saves a profile that uses a credential', async () => {
+    const user = userEvent.setup();
+    mocked.saveProfile.mockImplementation(async (_o, p) => p);
+    const credentials = [{ name: 'deploy', user: 'ci', auth: { method: 'password' as const } }];
+    render(ConnectionDialog, { props: { mode: 'profile', credentials, onclose: vi.fn() } });
+    await user.type(screen.getByLabelText('Profile name'), 'web');
+    await user.type(screen.getByLabelText('Host'), 'web.example.com');
+    await user.selectOptions(screen.getByLabelText('Credential'), 'deploy');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(mocked.saveProfile).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ name: 'web', user: null, auth: { method: 'agent' }, credential: 'deploy' }),
+      null,
+    );
   });
 });

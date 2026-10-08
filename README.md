@@ -20,6 +20,10 @@ See [plan.md](plan.md) for the roadmap.
   version of the file.
 - Server-supplied file names are validated, so a hostile server cannot make a
   download write outside the destination directory.
+- **Profiles (bookmarks)** in groups, searchable by name, host, user, group or
+  directory, and **shared credentials**: save a user and login (password in the
+  OS keychain, key file, agent or ask-every-time) once and use it for several
+  profiles or quick connects.
 
 ## Usage
 
@@ -30,6 +34,11 @@ oxfer put -r ./site user@host:/var/www --overwrite newer
 oxfer rm -r user@host:/tmp/old
 oxfer shell user@host            # interactive: cd, ls, get, put, tab completion
 oxfer completions zsh > _oxfer   # shell completions (bash, zsh, fish, ...)
+
+oxfer credential add deploy --user deployer          # asks for the password once
+oxfer profile add web web.example.com --group Work --credential deploy
+oxfer profile list                                    # by group; `profile list acme` searches
+oxfer ls @web:/var/www
 ```
 
 Common options: `-P <port>`, `-i <key>`, `--agent`, `--known-hosts <file>`.

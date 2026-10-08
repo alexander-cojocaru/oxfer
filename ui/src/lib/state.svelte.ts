@@ -2,7 +2,7 @@
 
 import { api, errorMessage } from './api';
 import { emptyQueue, reduceTransfers, removeFinished, type QueueState } from './transfers';
-import type { OverwritePolicy, Profile, Prompt, PromptAnswer, SessionInfo, TransferEvent } from './types';
+import type { Credential, OverwritePolicy, Profile, Prompt, PromptAnswer, SessionInfo, TransferEvent } from './types';
 
 export type ToastKind = 'info' | 'success' | 'error';
 
@@ -22,6 +22,7 @@ let toastSeq = 1;
 class AppState {
   sessions = $state<SessionInfo[]>([]);
   profiles = $state<Profile[]>([]);
+  credentials = $state<Credential[]>([]);
   queue = $state<QueueState>(emptyQueue);
   prompts = $state<OpenPrompt[]>([]);
   toasts = $state<Toast[]>([]);
@@ -51,9 +52,10 @@ class AppState {
     }
   }
 
+  /** Profiles and credentials (renaming a credential changes profiles too). */
   async loadProfiles(): Promise<void> {
     try {
-      this.profiles = await api.listProfiles();
+      [this.profiles, this.credentials] = await Promise.all([api.listProfiles(), api.listCredentials()]);
     } catch (e) {
       this.error(e);
     }

@@ -8,10 +8,10 @@ use std::time::Duration;
 use oxfer_config::MemoryStore;
 use oxfer_core::LocalFs;
 use oxfer_gui::service::{
-    AuthDto, ConflictChoice, ConnectEnv, ConnectRequest, EntryKindDto, EventSink, HostKeyChoice,
-    OverwriteDto, ProfileDto, ProfileStore, Prompt, PromptAnswer, ProtocolDto, QuickAuth,
-    QuickConnect, ScriptedPrompter, SecretKind, SessionManager, TransferEvent, TransferOptionsDto,
-    TransferRequest, LOCAL_SESSION,
+    AuthDto, ConflictChoice, ConnectEnv, ConnectRequest, CredentialDto, EntryKindDto, EventSink,
+    HostKeyChoice, OverwriteDto, ProfileDto, ProfileStore, Prompt, PromptAnswer, ProtocolDto,
+    QuickAuth, QuickConnect, ScriptedPrompter, SecretKind, SessionManager, TransferEvent,
+    TransferOptionsDto, TransferRequest, LOCAL_SESSION,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
@@ -485,6 +485,7 @@ async fn interactive_connect_questions() {
         key_path: None,
         remote_dir: None,
         insecure_tls: false,
+        credential: None,
     });
     let e = f.svc.connect(req, prompter.clone()).await.unwrap_err();
     assert_eq!(e.code, "cancelled");
@@ -559,6 +560,7 @@ async fn sftp_end_to_end_with_host_key_prompt() {
         key_path: Some(path(&srv.client_key())),
         remote_dir: Some(work.clone()),
         insecure_tls: false,
+        credential: None,
     };
 
     // Reject: no connection, nothing saved.
@@ -631,6 +633,8 @@ async fn sftp_end_to_end_with_host_key_prompt() {
                     path: path(&srv.client_key()),
                 },
                 remote_dir: Some(work),
+                group: None,
+                credential: None,
             },
             None,
         )
@@ -649,5 +653,72 @@ async fn sftp_end_to_end_with_host_key_prompt() {
     assert!(prompter.asked().is_empty());
     assert_eq!(s2.label, "test");
     f.svc.disconnect(&s2.id).unwrap();
+
+    // A shared credential works for a profile and for a quick connect.
+    f.svc
+        .profiles()
+        .save_credential(
+            None,
+            CredentialDto {
+                name: "testkey".into(),
+                user: Some(srv.user()),
+                auth: AuthDto::KeyFile {
+                    path: path(&srv.client_key()),
+                },
+            },
+            None,
+        )
+        .unwrap();
+    f.svc
+        .profiles()
+        .save(
+            None,
+            ProfileDto {
+                name: "viacred".into(),
+                protocol: ProtocolDto::Sftp,
+                host: "127.0.0.1".into(),
+                port: Some(srv.port),
+                user: None,
+                auth: AuthDto::Agent,
+                remote_dir: None,
+                group: None,
+                credential: Some("testkey".into()),
+            },
+            None,
+        )
+        .unwrap();
+    let s3 = f
+        .svc
+        .connect(
+            ConnectRequest::Profile {
+                name: "viacred".into(),
+            },
+            prompter.clone(),
+        )
+        .await
+        .unwrap();
+    f.svc.disconnect(&s3.id).unwrap();
+    let s4 = f
+        .svc
+        .connect(
+            ConnectRequest::Quick(QuickConnect {
+                protocol: ProtocolDto::Sftp,
+                host: "127.0.0.1".into(),
+                port: Some(srv.port),
+                user: Some("nobody".into()),
+                auth: QuickAuth::Password,
+                password: None,
+                key_path: None,
+                remote_dir: None,
+                insecure_tls: false,
+                credential: Some("testkey".into()),
+            }),
+            prompter.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(s4.label, format!("{}@127.0.0.1", srv.user()));
+    assert!(prompter.asked().is_empty());
+    f.svc.disconnect(&s4.id).unwrap();
     f.svc.disconnect(&session.id).unwrap();
 }

@@ -11,6 +11,7 @@ vi.mock('./lib/api', () => ({
   api: {
     listSessions: vi.fn().mockResolvedValue([{ id: 'local', label: 'Local', protocol: 'local', home: '/home/u' }]),
     listProfiles: vi.fn().mockResolvedValue([]),
+    listCredentials: vi.fn().mockResolvedValue([]),
     listDir: vi.fn().mockImplementation(async (_s: string, path: string) => [
       { name: 'docs', path: `${path}/docs`, kind: 'dir', size: 0, modified: 0, permissions: 0o755 },
       { name: 'notes.txt', path: `${path}/notes.txt`, kind: 'file', size: 12, modified: 0, permissions: 0o644 },

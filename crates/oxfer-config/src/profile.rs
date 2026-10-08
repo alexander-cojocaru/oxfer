@@ -58,6 +58,14 @@ pub struct Profile {
     /// Profile name or `user@host:port`. Not supported for connecting yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_jump: Option<String>,
+    /// Folder the profile is listed under; `None` lists it at the top level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    /// Name of a shared [`Credential`](crate::Credential). When set, its user
+    /// and authentication replace this profile's (see
+    /// [`Config::resolve`](crate::Config::resolve)); `auth` is then ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
 }
 
 impl Profile {
@@ -76,7 +84,40 @@ impl Profile {
             auth,
             remote_dir: None,
             proxy_jump: None,
+            group: None,
+            credential: None,
         }
+    }
+
+    /// Key of this profile's password in the [`SecretStore`]: the shared
+    /// credential's if it uses one, else its own.
+    pub fn secret_key(&self) -> String {
+        match &self.credential {
+            Some(c) => crate::credential::secret_key(c),
+            None => self.name.clone(),
+        }
+    }
+
+    /// Case-insensitive search: every whitespace-separated term must occur in
+    /// the name, host, user, group or remote directory.
+    pub fn matches(&self, query: &str) -> bool {
+        let fields = [
+            Some(self.name.as_str()),
+            Some(self.host.as_str()),
+            self.user.as_deref(),
+            self.group.as_deref(),
+            self.remote_dir.as_deref(),
+        ];
+        let haystack = fields
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase();
+        query
+            .to_lowercase()
+            .split_whitespace()
+            .all(|term| haystack.contains(term))
     }
 
     pub fn effective_port(&self) -> u16 {
@@ -85,7 +126,10 @@ impl Profile {
 
     pub fn validate(&self) -> Result<()> {
         let bad = |m: &str| Err(Error::Invalid(format!("'{}': {m}", self.name)));
-        if self.name.trim().is_empty() || self.name.chars().any(char::is_control) {
+        if self.name.trim().is_empty()
+            || self.name.chars().any(char::is_control)
+            || self.name.starts_with(crate::CREDENTIAL_SECRET_PREFIX)
+        {
             return Err(Error::Invalid(format!("bad profile name {:?}", self.name)));
         }
         if self.host.trim().is_empty() {
@@ -93,6 +137,11 @@ impl Profile {
         }
         if self.port == Some(0) {
             return bad("port must not be 0");
+        }
+        if let Some(g) = &self.group {
+            if g.trim().is_empty() || g.trim() != g || g.chars().any(char::is_control) {
+                return bad("bad group name");
+            }
         }
         Ok(())
     }
@@ -132,7 +181,7 @@ impl Profile {
             },
             AuthMethod::Password => {
                 let pw = secrets
-                    .get(&self.name)?
+                    .get(&self.secret_key())?
                     .ok_or_else(|| Error::MissingSecret(self.name.clone()))?;
                 Auth::Password(pw.expose().to_string())
             }
@@ -231,6 +280,33 @@ mod tests {
             p.to_sftp_options(&store, None),
             Err(Error::MissingUser(_))
         ));
+    }
+
+    #[test]
+    fn search_matches_every_term_in_any_field() {
+        let mut p = prof(AuthMethod::Agent);
+        p.host = "web.example.com".into();
+        p.group = Some("Customers/ACME".into());
+        p.remote_dir = Some("/srv/www".into());
+        for q in ["", "WEB", "acme bob", "srv customers", "  example  "] {
+            assert!(p.matches(q), "{q:?}");
+        }
+        for q in ["db", "acme alice"] {
+            assert!(!p.matches(q), "{q:?}");
+        }
+    }
+
+    #[test]
+    fn group_must_be_a_clean_name() {
+        let mut p = prof(AuthMethod::Agent);
+        for good in ["Work", "Customers/ACME", "a b"] {
+            p.group = Some(good.into());
+            assert!(p.validate().is_ok(), "{good:?}");
+        }
+        for bad in ["", " ", " Work", "a\tb"] {
+            p.group = Some(bad.into());
+            assert!(p.validate().is_err(), "{bad:?}");
+        }
     }
 
     #[test]

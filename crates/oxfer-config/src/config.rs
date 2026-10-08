@@ -1,3 +1,4 @@
+use crate::credential::Credential;
 use crate::profile::Profile;
 use crate::{Error, Result};
 use directories::ProjectDirs;
@@ -9,6 +10,8 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     #[serde(default)]
     profiles: Vec<Profile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    credentials: Vec<Credential>,
 }
 
 impl Config {
@@ -46,6 +49,11 @@ impl Config {
         };
         let cfg: Config = toml::from_str(&text).map_err(|e| parse_err(e.to_string()))?;
         let mut checked = Config::default();
+        for c in &cfg.credentials {
+            checked
+                .add_credential(c.clone())
+                .map_err(|e| parse_err(e.to_string()))?;
+        }
         for p in &cfg.profiles {
             checked
                 .add(p.clone())
@@ -109,6 +117,81 @@ impl Config {
             .ok_or_else(|| Error::NotFound(name.into()))?;
         Ok(self.profiles.remove(i))
     }
+
+    /// `profile` with the user and authentication of its shared credential
+    /// filled in (the credential's user wins; the profile's is the fallback).
+    /// Profiles without a credential are returned unchanged.
+    pub fn resolve(&self, profile: &Profile) -> Result<Profile> {
+        let mut p = profile.clone();
+        if let Some(name) = &profile.credential {
+            let c = self
+                .credential(name)
+                .ok_or_else(|| Error::UnknownCredential(name.clone()))?;
+            p.auth = c.auth.clone();
+            p.user = c.user.clone().or(p.user);
+        }
+        Ok(p)
+    }
+
+    pub fn credentials(&self) -> &[Credential] {
+        &self.credentials
+    }
+
+    pub fn credential(&self, name: &str) -> Option<&Credential> {
+        self.credentials.iter().find(|c| c.name == name)
+    }
+
+    pub fn add_credential(&mut self, credential: Credential) -> Result<()> {
+        credential.validate()?;
+        if self.credential(&credential.name).is_some() {
+            return Err(Error::DuplicateCredential(credential.name));
+        }
+        self.credentials.push(credential);
+        Ok(())
+    }
+
+    /// Replace the credential `original` (possibly renaming it; profiles
+    /// that use it follow the new name).
+    pub fn replace_credential(&mut self, original: &str, credential: Credential) -> Result<()> {
+        credential.validate()?;
+        let i = self
+            .credentials
+            .iter()
+            .position(|c| c.name == original)
+            .ok_or_else(|| Error::UnknownCredential(original.into()))?;
+        if credential.name != original && self.credential(&credential.name).is_some() {
+            return Err(Error::DuplicateCredential(credential.name));
+        }
+        for p in &mut self.profiles {
+            if p.credential.as_deref() == Some(original) {
+                p.credential = Some(credential.name.clone());
+            }
+        }
+        self.credentials[i] = credential;
+        Ok(())
+    }
+
+    /// Remove a credential no profile uses.
+    pub fn remove_credential(&mut self, name: &str) -> Result<Credential> {
+        let users: Vec<&str> = self
+            .profiles
+            .iter()
+            .filter(|p| p.credential.as_deref() == Some(name))
+            .map(|p| p.name.as_str())
+            .collect();
+        if !users.is_empty() {
+            return Err(Error::CredentialInUse {
+                name: name.into(),
+                profiles: users.join(", "),
+            });
+        }
+        let i = self
+            .credentials
+            .iter()
+            .position(|c| c.name == name)
+            .ok_or_else(|| Error::UnknownCredential(name.into()))?;
+        Ok(self.credentials.remove(i))
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +230,7 @@ mod tests {
         a.user = Some("u".into());
         a.remote_dir = Some("/srv".into());
         a.proxy_jump = Some("bastion".into());
+        a.group = Some("Work".into());
         a.auth = AuthMethod::KeyFile {
             path: "~/.ssh/id".into(),
         };
@@ -174,6 +258,65 @@ mod tests {
             std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
             1
         );
+    }
+
+    #[test]
+    fn credentials_crud_resolve_and_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut c = Config::default();
+        c.add_credential(Credential::new(
+            "deploy",
+            Some("deployer".into()),
+            AuthMethod::Password,
+        ))
+        .unwrap();
+        assert!(matches!(
+            c.add_credential(Credential::new("deploy", None, AuthMethod::Agent)),
+            Err(Error::DuplicateCredential(_))
+        ));
+        let mut web = p("web");
+        web.user = Some("ignored".into());
+        web.credential = Some("deploy".into());
+        c.add(web.clone()).unwrap();
+        c.add(p("plain")).unwrap();
+
+        let r = c.resolve(&web).unwrap();
+        assert_eq!(r.user.as_deref(), Some("deployer"));
+        assert_eq!(r.auth, AuthMethod::Password);
+        assert_eq!(r.secret_key(), "credential:deploy");
+        assert_eq!(
+            c.resolve(c.get("plain").unwrap()).unwrap().secret_key(),
+            "plain"
+        );
+
+        c.save_to(&path).unwrap();
+        assert_eq!(Config::load_from(&path).unwrap(), c);
+
+        // in use: refused; rename: references follow
+        assert!(matches!(
+            c.remove_credential("deploy"),
+            Err(Error::CredentialInUse { ref profiles, .. }) if profiles == "web"
+        ));
+        c.replace_credential("deploy", Credential::new("ci", None, AuthMethod::Agent))
+            .unwrap();
+        assert_eq!(c.get("web").unwrap().credential.as_deref(), Some("ci"));
+        // no user on the credential: the profile's is used
+        assert_eq!(
+            c.resolve(c.get("web").unwrap()).unwrap().user.as_deref(),
+            Some("ignored")
+        );
+        c.remove("web").unwrap();
+        c.remove_credential("ci").unwrap();
+        assert!(c.credentials().is_empty());
+
+        let mut dangling = p("x");
+        dangling.credential = Some("nope".into());
+        assert!(matches!(
+            c.resolve(&dangling),
+            Err(Error::UnknownCredential(_))
+        ));
+        assert!(c.add(p("credential:x")).is_err());
     }
 
     #[test]
