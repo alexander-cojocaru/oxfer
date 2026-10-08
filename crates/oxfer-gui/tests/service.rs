@@ -650,6 +650,63 @@ async fn sftp_end_to_end_with_host_key_prompt() {
         )
         .await
         .unwrap();
+    // Same server and account as the quick connect: that session is reused.
+    assert!(prompter.asked().is_empty());
+    assert_eq!(s2.id, session.id);
+    assert_eq!(
+        f.svc.sessions().len(),
+        3,
+        "local, the fixture's fake remote, one sftp"
+    );
+    let again = f
+        .svc
+        .connect(ConnectRequest::Quick(quick.clone()), prompter.clone())
+        .await
+        .unwrap();
+    assert_eq!(again.id, session.id);
+    // An ssh_config alias of the same server is only recognised after
+    // connecting; the new connection is dropped in favour of the open one.
+    std::fs::write(
+        srv.dir.path().join("ssh_config"),
+        format!(
+            "Host box\n HostName 127.0.0.1\n Port {}\n User {}\n",
+            srv.port,
+            srv.user()
+        ),
+    )
+    .unwrap();
+    let mut alias = quick.clone();
+    alias.host = "box".into();
+    alias.port = None;
+    alias.user = None;
+    let by_alias = f
+        .svc
+        .connect(ConnectRequest::Quick(alias.clone()), prompter.clone())
+        .await
+        .unwrap();
+    assert_eq!(by_alias.id, session.id);
+    assert_eq!(f.svc.sessions().len(), 3);
+    // ... and remembered, so the next attempt does not connect at all
+    let again = f
+        .svc
+        .connect(ConnectRequest::Quick(alias), prompter.clone())
+        .await
+        .unwrap();
+    assert_eq!(again.id, session.id);
+    std::fs::write(srv.dir.path().join("ssh_config"), "").unwrap();
+
+    // Once closed, the profile connects on its own.
+    f.svc.disconnect(&session.id).unwrap();
+    let s2 = f
+        .svc
+        .connect(
+            ConnectRequest::Profile {
+                name: "test".into(),
+            },
+            prompter.clone(),
+        )
+        .await
+        .unwrap();
     assert!(prompter.asked().is_empty());
     assert_eq!(s2.label, "test");
     f.svc.disconnect(&s2.id).unwrap();
@@ -720,7 +777,6 @@ async fn sftp_end_to_end_with_host_key_prompt() {
     assert_eq!(s4.label, format!("{}@127.0.0.1", srv.user()));
     assert!(prompter.asked().is_empty());
     f.svc.disconnect(&s4.id).unwrap();
-    f.svc.disconnect(&session.id).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -787,7 +843,10 @@ async fn edited_remote_file_is_uploaded_on_save() {
         "remote files are copied"
     );
     assert_eq!(std::fs::read_to_string(&local).unwrap(), "a=1\n");
-    assert_eq!(opened.lock().unwrap().as_slice(), std::slice::from_ref(&local));
+    assert_eq!(
+        opened.lock().unwrap().as_slice(),
+        std::slice::from_ref(&local)
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

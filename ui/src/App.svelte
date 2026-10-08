@@ -68,7 +68,17 @@
   });
 
   function onconnected(s: SessionInfo) {
-    app.sessions = [...app.sessions.filter((x) => x.id !== s.id), s];
+    // The backend keeps one session per server and returns the open one.
+    if (app.sessions.some((x) => x.id === s.id)) {
+      const shown = (['left', 'right'] as const).find((side) => sessionIds[side] === s.id);
+      const side: Side = shown ?? other(activeSide);
+      sessionIds = { ...sessionIds, [side]: s.id };
+      activeSide = side;
+      panes[side]?.focusList();
+      app.toast('info', t('alreadyConnected', { label: s.label }));
+      return;
+    }
+    app.sessions = [...app.sessions, s];
     // show the new connection in the right pane (or the inactive one)
     const side: Side = sessionIds.right === LOCAL_SESSION ? 'right' : other(activeSide);
     sessionIds = { ...sessionIds, [side]: s.id };

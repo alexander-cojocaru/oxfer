@@ -17,6 +17,7 @@ vi.mock('./lib/api', () => ({
       { name: 'notes.txt', path: `${path}/notes.txt`, kind: 'file', size: 12, modified: 0, permissions: 0o644 },
     ]),
     startTransfer: vi.fn().mockResolvedValue(1),
+    connect: vi.fn().mockResolvedValue({ id: 's1', label: 'web', protocol: 'sftp', home: '/srv' }),
     readPreview: vi.fn().mockResolvedValue({ content: 'hello world\nline 2', binary: false, truncated: false, size: 18 }),
     openInEditor: vi.fn().mockResolvedValue('/home/u/notes.txt'),
     answerPrompt: vi.fn().mockResolvedValue(undefined),
@@ -99,5 +100,31 @@ describe('App (smoke)', () => {
     await fireEvent.click(screen.getAllByText('notes.txt')[1]);
     await fireEvent.keyDown(screen.getAllByRole('grid')[1], { key: 'F4' });
     expect(api.openInEditor).toHaveBeenCalledWith('local', '/home/u/notes.txt');
+  });
+
+  it('connecting to an open server switches to its session instead of opening another', async () => {
+    vi.mocked(api.listProfiles).mockResolvedValueOnce([
+      {
+        name: 'web',
+        protocol: 'sftp',
+        host: 'web.example.com',
+        port: null,
+        user: 'bob',
+        auth: { method: 'agent' },
+        remoteDir: null,
+        group: null,
+        credential: null,
+      },
+    ]);
+    render(App);
+    const connectWeb = await screen.findByRole('button', { name: 'Connect web' });
+    await fireEvent.click(connectWeb);
+    // toast and status bar
+    expect((await screen.findAllByText('Connected to web')).length).toBeGreaterThan(0);
+    await fireEvent.click(connectWeb);
+    expect((await screen.findAllByText(/Already connected to web/)).length).toBeGreaterThan(0);
+    expect(api.connect).toHaveBeenCalledTimes(2);
+    // still one entry under "Connections"
+    expect(screen.getAllByRole('button', { name: 'Disconnect web' })).toHaveLength(1);
   });
 });

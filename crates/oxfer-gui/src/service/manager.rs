@@ -26,6 +26,20 @@ pub const LOCAL_SESSION: &str = "local";
 struct Session {
     fs: Arc<dyn RemoteFs>,
     info: SessionInfo,
+    /// Server keys this session answers for (see `connect::server_key`).
+    keys: Vec<String>,
+}
+
+/// Marks a server as being connected to until dropped.
+struct Connecting<'a> {
+    set: &'a Mutex<std::collections::HashSet<String>>,
+    key: String,
+}
+
+impl Drop for Connecting<'_> {
+    fn drop(&mut self) {
+        lock(self.set).remove(&self.key);
+    }
 }
 
 struct TransferEntry {
@@ -46,6 +60,8 @@ pub struct SessionManager {
     profiles: ProfileStore,
     env: ConnectEnv,
     opener: RwLock<Opener>,
+    /// Servers a connection is currently being opened to.
+    connecting: Mutex<std::collections::HashSet<String>>,
     /// Remote files open in an editor: (session, path) -> local copy.
     edits: Mutex<HashMap<(String, String), PathBuf>>,
     next_edit: AtomicU64,
@@ -91,6 +107,7 @@ impl SessionManager {
             LOCAL_SESSION.to_string(),
             Session {
                 fs: Arc::new(LocalFs),
+                keys: Vec::new(),
                 info: SessionInfo {
                     id: LOCAL_SESSION.into(),
                     label: "Local".into(),
@@ -108,6 +125,7 @@ impl SessionManager {
             profiles,
             env,
             opener: RwLock::new(editor::system_opener()),
+            connecting: Mutex::new(Default::default()),
             edits: Mutex::new(HashMap::new()),
             next_edit: AtomicU64::new(1),
         })
@@ -206,6 +224,17 @@ impl SessionManager {
         protocol: ProtocolDto,
         home: &str,
     ) -> SessionInfo {
+        self.add_session_with_keys(fs, label, protocol, home, Vec::new())
+    }
+
+    fn add_session_with_keys(
+        &self,
+        fs: Arc<dyn RemoteFs>,
+        label: &str,
+        protocol: ProtocolDto,
+        home: &str,
+        keys: Vec<String>,
+    ) -> SessionInfo {
         let id = format!("s{}", self.next_session.fetch_add(1, Ordering::Relaxed));
         let info = SessionInfo {
             id: id.clone(),
@@ -221,6 +250,7 @@ impl SessionManager {
                 Session {
                     fs,
                     info: info.clone(),
+                    keys,
                 },
             );
         info
@@ -247,14 +277,53 @@ impl SessionManager {
             .ok_or_else(|| ServiceError::unknown_session(session))
     }
 
+    /// The open session for `key`, remembering `also` as another key for it.
+    fn session_for(&self, key: &str, also: Option<&String>) -> Option<SessionInfo> {
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
+        let s = sessions
+            .values_mut()
+            .find(|s| s.keys.iter().any(|k| k == key))?;
+        if let Some(k) = also.filter(|k| !s.keys.contains(k)) {
+            s.keys.push(k.clone());
+        }
+        Some(s.info.clone())
+    }
+
+    /// Connect, or return the session already open to the same server and
+    /// account: there is at most one session per server.
     pub async fn connect(
         &self,
         req: ConnectRequest,
         prompter: Arc<dyn Prompter>,
     ) -> ServiceResult<SessionInfo> {
+        let requested = connect::request_key(&self.profiles, &req);
+        let _connecting = match &requested {
+            Some(k) => {
+                if let Some(existing) = self.session_for(k, None) {
+                    return Ok(existing);
+                }
+                if !lock(&self.connecting).insert(k.clone()) {
+                    return Err(ServiceError::new(
+                        "busy",
+                        "a connection to this server is already being opened",
+                    ));
+                }
+                Some(Connecting {
+                    set: &self.connecting,
+                    key: k.clone(),
+                })
+            }
+            None => None,
+        };
         let c = connect::connect(&self.env, &self.profiles, req, prompter).await?;
+        // Reached under another name (e.g. an ssh_config alias): keep the
+        // first session and close the new connection.
+        if let Some(existing) = self.session_for(&c.key, requested.as_ref()) {
+            return Ok(existing);
+        }
         let home = connect::start_dir(&*c.fs, c.start_dir).await;
-        Ok(self.add_session(c.fs, &c.label, c.protocol, &home))
+        let keys = std::iter::once(c.key).chain(requested).collect();
+        Ok(self.add_session_with_keys(c.fs, &c.label, c.protocol, &home, keys))
     }
 
     /// Close a session. Running transfers keep their own reference and finish.

@@ -92,6 +92,44 @@ pub(crate) struct Connected {
     pub label: String,
     pub protocol: ProtocolDto,
     pub start_dir: Option<String>,
+    /// Identifies the server and account actually connected to (after
+    /// ssh_config resolution); see [`server_key`].
+    pub key: String,
+}
+
+/// One open session per protocol, account, host and port.
+pub(crate) fn server_key(protocol: Protocol, user: &str, host: &str, port: u16) -> String {
+    format!(
+        "{protocol:?}://{user}@{}:{port}",
+        host.trim().to_lowercase()
+    )
+}
+
+/// The [`server_key`] a request would connect to, as far as it can be told
+/// without connecting (ssh_config aliases are only resolved by connecting).
+pub(crate) fn request_key(profiles: &ProfileStore, req: &ConnectRequest) -> Option<String> {
+    match req {
+        ConnectRequest::Profile { name } => {
+            let p = profiles.get(name).ok()?;
+            let user = p.user.as_deref().unwrap_or_default();
+            Some(server_key(p.protocol, user, &p.host, p.effective_port()))
+        }
+        ConnectRequest::Quick(q) => {
+            let protocol = q.protocol.to_config()?;
+            let user = match q.credential.as_deref().filter(|c| !c.trim().is_empty()) {
+                Some(c) => profiles.credential(c).ok()?.user,
+                None => q.user.clone(),
+            };
+            let user = user.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+            let user = match (user, protocol) {
+                (Some(u), _) => u,
+                (None, Protocol::Sftp) => String::new(),
+                (None, _) => "anonymous".into(),
+            };
+            let port = q.port.unwrap_or_else(|| protocol.default_port());
+            Some(server_key(protocol, &user, &q.host, port))
+        }
+    }
 }
 
 fn host_key_verifier(prompter: Arc<dyn Prompter>) -> HostKeyVerifier {
@@ -398,7 +436,7 @@ async fn connect_profile(
     profile: &Profile,
     prompter: Arc<dyn Prompter>,
 ) -> ServiceResult<Connected> {
-    let fs: Arc<dyn RemoteFs> = match profile.protocol {
+    let (fs, key): (Arc<dyn RemoteFs>, String) = match profile.protocol {
         Protocol::Sftp => {
             // SshConfig is not Send: keep it out of the awaits below.
             let (opts, password_fallback) = {
@@ -432,11 +470,11 @@ async fn connect_profile(
                 verifier,
             };
             let explicit_key = matches!(profile.auth, AuthMethod::KeyFile { .. });
-            Arc::new(
-                target
-                    .connect(candidates, explicit_key, password_fallback, &*prompter)
-                    .await?,
-            )
+            let fs = target
+                .connect(candidates, explicit_key, password_fallback, &*prompter)
+                .await?;
+            let key = server_key(Protocol::Sftp, &target.user, &target.host, target.port);
+            (Arc::new(fs), key)
         }
         proto => {
             let user = profile.user.clone().unwrap_or_else(|| "anonymous".into());
@@ -453,18 +491,18 @@ async fn connect_profile(
                     ))
                 }
             };
-            Arc::new(
-                connect_ftp(
-                    proto,
-                    &profile.host,
-                    profile.effective_port(),
-                    &user,
-                    password,
-                    false,
-                    &*prompter,
-                )
-                .await?,
+            let fs = connect_ftp(
+                proto,
+                &profile.host,
+                profile.effective_port(),
+                &user,
+                password,
+                false,
+                &*prompter,
             )
+            .await?;
+            let key = server_key(proto, &user, &profile.host, profile.effective_port());
+            (Arc::new(fs), key)
         }
     };
     Ok(Connected {
@@ -472,6 +510,7 @@ async fn connect_profile(
         label: profile.name.clone(),
         protocol: profile.protocol.into(),
         start_dir: profile.remote_dir.clone(),
+        key,
     })
 }
 
@@ -495,7 +534,7 @@ async fn connect_quick(
         .filter(|u| !u.is_empty())
         .map(String::from);
     let password = q.password.map(|p| p.0).filter(|p| !p.is_empty());
-    let (fs, label): (Arc<dyn RemoteFs>, String) = match protocol {
+    let (fs, label, key): (Arc<dyn RemoteFs>, String, String) = match protocol {
         Protocol::Sftp => {
             let (resolved, ssh_home, jump) = {
                 let ssh = env.ssh_config();
@@ -578,7 +617,8 @@ async fn connect_quick(
             let fs = target
                 .connect(candidates, explicit_key, password_fallback, &*prompter)
                 .await?;
-            (Arc::new(fs), format!("{user}@{host}"))
+            let key = server_key(Protocol::Sftp, &user, &target.host, port);
+            (Arc::new(fs), format!("{user}@{host}"), key)
         }
         proto => {
             let (user, password) = match user_in {
@@ -596,7 +636,8 @@ async fn connect_quick(
                 &*prompter,
             )
             .await?;
-            (Arc::new(fs), format!("{user}@{host}"))
+            let key = server_key(proto, &user, &host, port);
+            (Arc::new(fs), format!("{user}@{host}"), key)
         }
     };
     Ok(Connected {
@@ -604,6 +645,7 @@ async fn connect_quick(
         label,
         protocol: protocol.into(),
         start_dir: q.remote_dir.filter(|d| !d.trim().is_empty()),
+        key,
     })
 }
 
