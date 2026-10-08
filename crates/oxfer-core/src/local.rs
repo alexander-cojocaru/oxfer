@@ -74,7 +74,7 @@ impl RemoteFs for LocalFs {
         let p = tokio::fs::canonicalize(path.as_str())
             .await
             .map_err(|e| map_err(e, path))?;
-        Ok(RemotePath::new(p.to_string_lossy().into_owned()))
+        Ok(RemotePath::from_local(&p.to_string_lossy()))
     }
 
     async fn lstat(&self, path: &RemotePath) -> Result<Entry> {

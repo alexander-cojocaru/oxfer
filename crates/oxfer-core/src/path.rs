@@ -9,6 +9,18 @@ impl RemotePath {
         Self(path.into())
     }
 
+    /// A path on the local file system. Windows separators become `/` (which
+    /// the Windows APIs accept) so the rest of the code can treat every path
+    /// as slash-separated; the `\\?\` prefix of canonicalised paths is dropped.
+    pub fn from_local(path: &str) -> Self {
+        if cfg!(windows) {
+            let p = path.strip_prefix(r"\\?\").unwrap_or(path);
+            Self(p.replace('\\', "/"))
+        } else {
+            Self(path.to_string())
+        }
+    }
+
     pub fn root() -> Self {
         Self("/".into())
     }

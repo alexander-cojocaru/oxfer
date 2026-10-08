@@ -99,7 +99,7 @@ fn lpath(st: &Shared, arg: &str) -> RemotePath {
     } else {
         st.lcwd.join(p)
     };
-    RemotePath::new(full.to_string_lossy().into_owned()).normalize()
+    RemotePath::from_local(&full.to_string_lossy()).normalize()
 }
 
 #[derive(Helper, Highlighter, Hinter, Validator)]
