@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
@@ -8,8 +9,8 @@ use tokio::task::JoinSet;
 use crate::{Entry, Error, RemoteFs, RemotePath, Result};
 
 use super::{
-    Conflict, ConflictAction, Control, Event, Job, OverwritePolicy, Plan, Summary, TransferOptions,
-    PART_SUFFIX,
+    part_path, Conflict, ConflictAction, Control, Event, Job, OverwritePolicy, Plan, Summary,
+    TransferOptions,
 };
 
 const CHUNK: usize = 256 * 1024;
@@ -68,12 +69,15 @@ impl Transfer {
 
         let sem = Arc::new(Semaphore::new(self.opts.concurrency.max(1)));
         let mut set = JoinSet::new();
+        // To report a panicked task, which returns no path of its own.
+        let mut tasks = HashMap::new();
         for job in plan.jobs {
+            let task = (job.id, job.src.path.clone());
             let this = self.clone();
             let sem = sem.clone();
             let control = control.clone();
             let emit = emit.clone();
-            set.spawn(async move {
+            let handle = set.spawn(async move {
                 let path = job.src.path.clone();
                 let permit = tokio::select! {
                     p = sem.acquire_owned() => p.expect("semaphore is never closed"),
@@ -83,10 +87,24 @@ impl Transfer {
                 drop(permit);
                 (path, r)
             });
+            tasks.insert(handle.id(), task);
         }
 
         while let Some(joined) = set.join_next().await {
-            let Ok((path, result)) = joined else { continue };
+            let (path, result) = match joined {
+                Ok(r) => r,
+                Err(e) => {
+                    let Some((id, path)) = tasks.remove(&e.id()) else {
+                        continue;
+                    };
+                    let error = Error::Internal(format!("transfer task failed: {e}"));
+                    emit(Event::Failed {
+                        id,
+                        error: error.to_string(),
+                    });
+                    (path, Err(error))
+                }
+            };
             match result {
                 Ok(Outcome::Done(n)) => {
                     summary.completed += 1;
@@ -195,9 +213,11 @@ impl Transfer {
             }
         }
 
-        let tmp = RemotePath::new(format!("{}{PART_SUFFIX}", job.dst));
+        let tmp = part_path(&job.dst, &job.src);
         let mut offset = 0;
-        if self.opts.resume {
+        // Without a modification time we cannot tell whether a leftover partial
+        // file belongs to this version of the source, so start over.
+        if self.opts.resume && job.src.modified.is_some() {
             if let Ok(part) = self.dst.stat(&tmp).await {
                 if part.size <= total {
                     offset = part.size;
