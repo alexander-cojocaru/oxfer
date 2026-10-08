@@ -4,6 +4,7 @@ use std::time::Duration;
 use oxfer_core::{Error, RemotePath, Result};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{aws_lc_rs, CryptoProvider};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme};
 use suppaftp::tokio::{AsyncRustlsConnector, AsyncRustlsFtpStream};
@@ -33,6 +34,10 @@ pub struct FtpConnectOptions {
     pub tls: TlsMode,
     /// Skip certificate validation (self-signed servers). Insecure.
     pub danger_accept_invalid_certs: bool,
+    /// Additional trusted root certificates (PEM, may hold several), added to
+    /// the system roots. Lets a self-signed server be trusted without
+    /// disabling verification.
+    pub extra_root_certs_pem: Option<Vec<u8>>,
     /// Applies to establishing the connection and logging in.
     pub timeout: Duration,
 }
@@ -51,6 +56,7 @@ impl FtpConnectOptions {
             password: password.into(),
             tls: TlsMode::Explicit,
             danger_accept_invalid_certs: false,
+            extra_root_certs_pem: None,
             timeout: Duration::from_secs(30),
         }
     }
@@ -123,7 +129,7 @@ fn load_roots() -> RootCertStore {
     roots
 }
 
-async fn tls_config(accept_invalid: bool) -> Result<Arc<ClientConfig>> {
+async fn tls_config(accept_invalid: bool, extra_pem: Option<&[u8]>) -> Result<Arc<ClientConfig>> {
     let provider = Arc::new(aws_lc_rs::default_provider());
     let builder = ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
@@ -135,9 +141,17 @@ async fn tls_config(accept_invalid: bool) -> Result<Arc<ClientConfig>> {
             .with_custom_certificate_verifier(Arc::new(AcceptAny(provider)))
             .with_no_client_auth()
     } else {
-        let roots = tokio::task::spawn_blocking(load_roots)
+        let mut roots = tokio::task::spawn_blocking(load_roots)
             .await
             .map_err(|e| Error::Protocol(e.to_string()))?;
+        if let Some(pem) = extra_pem {
+            for cert in CertificateDer::pem_slice_iter(pem) {
+                let cert = cert.map_err(|e| Error::Protocol(format!("invalid root PEM: {e}")))?;
+                roots
+                    .add(cert)
+                    .map_err(|e| Error::Protocol(format!("invalid root certificate: {e}")))?;
+            }
+        }
         builder.with_root_certificates(roots).with_no_client_auth()
     };
     Ok(Arc::new(config))
@@ -170,7 +184,11 @@ async fn connect(opts: &FtpConnectOptions) -> Result<FtpFs> {
     let mut ftp = match opts.tls {
         TlsMode::None => AsyncRustlsFtpStream::connect(addr).await.map_err(err)?,
         TlsMode::Explicit | TlsMode::Implicit => {
-            let config = tls_config(opts.danger_accept_invalid_certs).await?;
+            let config = tls_config(
+                opts.danger_accept_invalid_certs,
+                opts.extra_root_certs_pem.as_deref(),
+            )
+            .await?;
             let connector = AsyncRustlsConnector::from(tokio_rustls::TlsConnector::from(config));
             if opts.tls == TlsMode::Explicit {
                 AsyncRustlsFtpStream::connect(addr)

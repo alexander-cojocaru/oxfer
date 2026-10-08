@@ -17,3 +17,4 @@ rustls-native-certs = "0.8"
 
 [dev-dependencies]
 proptest = "1.11.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "aws_lc_rs", "pem"] }
