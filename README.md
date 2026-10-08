@@ -43,6 +43,16 @@ generated Homebrew formula `oxfer.rb` as release assets. Copy the formula into
 your own tap (`brew tap-new you/tap`, add `oxfer.rb` under `Formula/`), then
 `brew install you/tap/oxfer`. From source: `cargo install --path crates/oxfer-cli`.
 
+Desktop app on macOS, built from this checkout (needs Node.js and
+`cargo install tauri-cli --version "^2" --locked`):
+
+```
+scripts/install-macos-app.sh                 # build and install to /Applications
+scripts/install-macos-app.sh ~/Applications  # or another folder
+```
+
+Run it again after `git pull` to update; it quits a running oxfer first.
+
 ## Performance
 
 Loopback comparison against OpenSSH `sftp` (Apple silicon, release build,
