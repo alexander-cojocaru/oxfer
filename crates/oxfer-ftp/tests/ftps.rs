@@ -63,7 +63,16 @@ async fn exercise(fs: &FtpFs, mock: &Mock) {
     assert_eq!(fs.stat(&rp("/big.bin")).await.unwrap().size, 300_000);
     assert_eq!(get(fs, "/big.bin", 0).await, data);
     // the bytes on disk are the plaintext, i.e. the TLS layer was transparent
-    assert_eq!(std::fs::read(mock.dir.join("big.bin")).unwrap(), data);
+    // (the mock may still be flushing when the client sees the transfer end)
+    let mut on_disk = Vec::new();
+    for _ in 0..100 {
+        on_disk = std::fs::read(mock.dir.join("big.bin")).unwrap_or_default();
+        if on_disk == data {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(on_disk == data, "on-disk {} bytes", on_disk.len());
 
     fs.mkdir(&rp("/d")).await.unwrap();
     assert!(fs.stat(&rp("/d")).await.unwrap().is_dir());
