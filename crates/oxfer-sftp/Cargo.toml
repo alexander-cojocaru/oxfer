@@ -6,3 +6,9 @@ license.workspace = true
 
 [dependencies]
 oxfer-core.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+russh = "0.64.1"
+russh-sftp = "3.0.1"
