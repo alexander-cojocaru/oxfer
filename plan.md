@@ -73,7 +73,7 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 | M3 Transfer engine | done |
 | M4 FTP / FTPS | done (plain FTP and FTPS explicit+implicit tested against mock servers, incl. certificate verification; no real-world FTP server tried) |
 | M5 Config & profiles | done (incl. ProxyJump chains; profile names as jump hosts unsupported) |
-| M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS, Linux build untested) |
+| M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS; on Linux (Ubuntu 24.04 arm64 container) fmt and clippy incl. the GUI pass, GUI not launched there) |
 | M7 TUI | done (unit/render tests plus a pseudo-terminal test driving a real session) |
 | M8 Polish & release | done: completions, man page, release workflow (binaries + generated Homebrew formula), benchmarks, property tests. The release workflow itself has not been run (needs a pushed tag) |
 

@@ -140,7 +140,8 @@ fn rejects_unknown_host_when_not_confirmed() {
     child.stdin.take().unwrap().write_all(b"no\n").unwrap();
     let o = child.wait_with_output().unwrap();
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("host key"));
+    let stderr = String::from_utf8_lossy(&o.stderr);
+    assert!(stderr.contains("host key"), "stderr was: {stderr}");
 }
 
 #[test]
