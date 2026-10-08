@@ -52,6 +52,9 @@ pub type ConflictResolver =
 #[derive(Clone)]
 pub struct TransferOptions {
     pub recursive: bool,
+    /// Expand `*`, `?`, `[..]` and `{..}` in the last component of each source.
+    /// Turn off when sources are exact paths (e.g. picked from a file list).
+    pub glob: bool,
     pub overwrite: OverwritePolicy,
     pub on_conflict: Option<ConflictResolver>,
     /// Continue a leftover partial file instead of starting over.
@@ -70,6 +73,7 @@ impl Default for TransferOptions {
     fn default() -> Self {
         Self {
             recursive: false,
+            glob: true,
             overwrite: OverwritePolicy::Overwrite,
             on_conflict: None,
             resume: true,

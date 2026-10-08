@@ -50,7 +50,12 @@ impl Transfer {
         }
         let mut plan = Plan::default();
         for pattern in sources {
-            for src in glob::expand(&*self.src, pattern).await? {
+            let expanded = if self.opts.glob {
+                glob::expand(&*self.src, pattern).await?
+            } else {
+                vec![pattern.clone()]
+            };
+            for src in expanded {
                 let name = src
                     .file_name()
                     .filter(|n| is_safe_name(n))

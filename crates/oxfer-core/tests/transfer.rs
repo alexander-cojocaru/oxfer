@@ -125,6 +125,29 @@ async fn glob_expansion() {
 }
 
 #[tokio::test]
+async fn glob_can_be_disabled_for_literal_names() {
+    let d = dirs();
+    write(&d.src.join("[1].txt"), b"literal");
+    write(&d.src.join("1.txt"), b"other");
+    let t = transfer(TransferOptions {
+        glob: false,
+        ..opts()
+    });
+    let s = t
+        .copy(
+            &[rp(&d.src.join("[1].txt"))],
+            &rp(&d.dst),
+            None,
+            Control::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(s.completed, 1);
+    assert_eq!(std::fs::read(d.dst.join("[1].txt")).unwrap(), b"literal");
+    assert!(!d.dst.join("1.txt").exists());
+}
+
+#[tokio::test]
 async fn overwrite_policies() {
     let d = dirs();
     write(&d.src.join("f"), b"new");
