@@ -86,16 +86,26 @@ fn main() {
 
     println!("{:<34} {:>10} {:>10}", "scenario", "oxfer", "sftp");
     let row = |name: &str, a: Duration, b: Duration| {
-        println!("{name:<34} {:>9.2}s {:>9.2}s", a.as_secs_f64(), b.as_secs_f64())
+        println!(
+            "{name:<34} {:>9.2}s {:>9.2}s",
+            a.as_secs_f64(),
+            b.as_secs_f64()
+        )
     };
 
     let a = time(oxfer_cmd(&["put", &big, &remote("o")]));
-    let b = time(sftp_batch(&format!("put {big} {}/s/big.bin\n", work.display())));
+    let b = time(sftp_batch(&format!(
+        "put {big} {}/s/big.bin\n",
+        work.display()
+    )));
     row("upload 256 MiB file", a, b);
 
     let (d1, d2) = (dl("dl1"), dl("dl2"));
     let a = time(oxfer_cmd(&["get", &remote("o/big.bin"), &d1]));
-    let b = time(sftp_batch(&format!("get {}/s/big.bin {d2}/big.bin\n", work.display())));
+    let b = time(sftp_batch(&format!(
+        "get {}/s/big.bin {d2}/big.bin\n",
+        work.display()
+    )));
     row("download 256 MiB file", a, b);
 
     let a = time(oxfer_cmd(&["put", "-r", &many, &remote("o")]));
@@ -104,7 +114,10 @@ fn main() {
 
     let (d3, d4) = (dl("dl3"), dl("dl4"));
     let a = time(oxfer_cmd(&["get", "-r", &remote("o/many"), &d3]));
-    let b = time(sftp_batch(&format!("get -r {}/s/many {d4}\n", work.display())));
+    let b = time(sftp_batch(&format!(
+        "get -r {}/s/many {d4}\n",
+        work.display()
+    )));
     row("download 1000 x 4 KiB files", a, b);
 
     let _ = std::fs::remove_dir_all(&local);

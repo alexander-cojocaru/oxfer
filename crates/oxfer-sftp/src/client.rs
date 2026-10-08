@@ -62,6 +62,9 @@ pub struct ConnectOptions {
     pub verifier: HostKeyVerifier,
     /// Override the `known_hosts` file (defaults to `~/.ssh/known_hosts`).
     pub known_hosts: Option<PathBuf>,
+    /// Reach `host` through this SSH server (like OpenSSH `ProxyJump`). Jumps
+    /// can be chained; each hop authenticates and verifies host keys itself.
+    pub jump: Option<Box<ConnectOptions>>,
 }
 
 impl ConnectOptions {
@@ -73,6 +76,7 @@ impl ConnectOptions {
             auth,
             verifier: Arc::new(|_| HostKeyDecision::Reject),
             known_hosts: None,
+            jump: None,
         }
     }
 }
@@ -158,8 +162,15 @@ fn map_connect_err(e: HandlerError) -> Error {
     }
 }
 
-impl SftpFs {
-    pub async fn connect(opts: ConnectOptions) -> Result<Self> {
+type Keepalive = Vec<Box<dyn std::any::Any + Send + Sync>>;
+
+/// Open an authenticated SSH session, tunnelling through `opts.jump` if set.
+/// Handles of the intermediate hops are pushed to `keep` so they stay alive.
+fn establish<'a>(
+    opts: &'a ConnectOptions,
+    keep: &'a mut Keepalive,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Handle<Handler>>> + Send + 'a>> {
+    Box::pin(async move {
         let handler = Handler {
             host: opts.host.clone(),
             port: opts.port,
@@ -167,12 +178,36 @@ impl SftpFs {
             known_hosts: opts.known_hosts.clone(),
         };
         let config = Arc::new(client::Config::default());
-        let mut session = client::connect(config, (opts.host.as_str(), opts.port), handler)
-            .await
-            .map_err(map_connect_err)?;
+        let mut session = match &opts.jump {
+            None => client::connect(config, (opts.host.as_str(), opts.port), handler)
+                .await
+                .map_err(map_connect_err)?,
+            Some(jump) => {
+                let hop = establish(jump, keep).await?;
+                let channel = hop
+                    .channel_open_direct_tcpip(opts.host.clone(), opts.port.into(), "127.0.0.1", 0)
+                    .await
+                    .map_err(|e| {
+                        Error::Connection(format!(
+                            "jump host {} cannot reach {}:{}: {e}",
+                            jump.host, opts.host, opts.port
+                        ))
+                    })?;
+                keep.push(Box::new(hop));
+                client::connect_stream(config, channel.into_stream(), handler)
+                    .await
+                    .map_err(map_connect_err)?
+            }
+        };
+        authenticate(&mut session, opts).await?;
+        Ok(session)
+    })
+}
 
-        authenticate(&mut session, &opts).await?;
-
+impl SftpFs {
+    pub async fn connect(opts: ConnectOptions) -> Result<Self> {
+        let mut keep: Keepalive = Vec::new();
+        let session = establish(&opts, &mut keep).await?;
         let channel = session.channel_open_session().await.map_err(conn_err)?;
         channel
             .request_subsystem(true, "sftp")
@@ -181,7 +216,8 @@ impl SftpFs {
         let sftp = SftpSession::new(channel.into_stream())
             .await
             .map_err(|e| Error::Protocol(e.to_string()))?;
-        Ok(SftpFs::new(sftp, session))
+        keep.push(Box::new(session));
+        Ok(SftpFs::new(sftp, keep))
     }
 }
 

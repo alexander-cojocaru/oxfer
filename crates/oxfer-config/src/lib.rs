@@ -1,15 +1,17 @@
 //! Profiles, `~/.ssh/config` resolution and credential storage for oxfer.
 //!
-//! Note: `ProxyJump` is parsed and carried through but connecting through a
-//! jump host is not supported yet; [`Profile::to_sftp_options`] returns
-//! [`Error::ProxyJumpUnsupported`] when one is configured.
+//! `ProxyJump` (profile field or `~/.ssh/config`) becomes a chain of
+//! [`oxfer_sftp::ConnectOptions::jump`] hops; jump hosts name hosts as
+//! `[user@]host[:port]` or ssh_config aliases (profile names are not resolved).
 
 mod config;
+mod jump;
 mod profile;
 pub mod secrets;
 pub mod ssh_config;
 
 pub use config::Config;
+pub use jump::jump_chain;
 pub use profile::{AuthMethod, Profile, Protocol};
 pub use secrets::{KeyringStore, MemoryStore, Secret, SecretStore};
 pub use ssh_config::{ResolvedHost, SshConfig};
@@ -47,6 +49,6 @@ pub enum Error {
     MissingUser(String),
     #[error("protocol {0} cannot be used for SFTP options")]
     WrongProtocol(&'static str),
-    #[error("ProxyJump ('{0}') is not supported yet")]
-    ProxyJumpUnsupported(String),
+    #[error("invalid ProxyJump hop: {0}")]
+    InvalidJump(String),
 }

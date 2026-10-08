@@ -72,7 +72,7 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 | M2 Interactive shell | done |
 | M3 Transfer engine | done |
 | M4 FTP / FTPS | done (plain FTP tested against a mock server; FTPS untested) |
-| M5 Config & profiles | done except ProxyJump connections |
+| M5 Config & profiles | done (incl. ProxyJump chains; profile names as jump hosts unsupported) |
 | M6 Desktop GUI | in progress |
 | M7 TUI | done (unit/render tests only; not exercised in a real terminal) |
 | M8 Polish & release | completions, man page, release workflow, benchmarks, property tests done; Homebrew formula not done |
