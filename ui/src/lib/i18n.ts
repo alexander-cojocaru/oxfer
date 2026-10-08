@@ -28,6 +28,7 @@ const en = {
   lines: '{count} lines',
   noFileSelected: 'Select a file first.',
   editingRemote: 'Editing a copy of "{name}". Every save in the editor is uploaded; the copy is removed when you disconnect.',
+  alreadyConnected: 'Already connected to {label}; switched to that connection.',
   credentials: 'Credentials',
   noCredentials: 'Save a login once and use it for several connections.',
   credential: 'Credential',
