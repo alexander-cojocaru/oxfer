@@ -14,4 +14,5 @@ globset = "0.4.20"
 sha2 = "0.11.0"
 
 [dev-dependencies]
+proptest = "1.11.0"
 tempfile = "3.27.0"
