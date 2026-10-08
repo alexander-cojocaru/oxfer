@@ -75,7 +75,7 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 | M5 Config & profiles | done (incl. ProxyJump chains; profile names as jump hosts unsupported) |
 | M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS; on Linux (Ubuntu 24.04 arm64 container) fmt, clippy incl. the GUI, and the full test suite against a real sshd pass; the GUI also builds and runs for 20 s under Xvfb without panicking, but nobody has clicked through it on Linux) |
 | M7 TUI | done (unit/render tests plus a pseudo-terminal test driving a real session) |
-| M8 Polish & release | done: completions, man page, release workflow (binaries + generated Homebrew formula), benchmarks, property tests. The release workflow has run: tag v0.1.0 built four archives and the generated Homebrew formula (private repo, so `brew install` from it is not tested) |
+| M8 Polish & release | done: completions, man page, release workflow (binaries + generated Homebrew formula), benchmarks, property tests. The release workflow has run: tag v0.1.0 built four archives and the generated Homebrew formula ; the macOS arm64 and Linux x86_64 binaries were run (`--version`, error paths). The Windows binary was not run, and `brew install` was not tried (private repo) |
 
 ## Milestones
 
