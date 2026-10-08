@@ -20,6 +20,20 @@ pub enum Error {
     Protocol(String),
     #[error("operation not supported: {0}")]
     Unsupported(&'static str),
+    #[error("invalid request: {0}")]
+    Invalid(String),
+    #[error("cancelled")]
+    Cancelled,
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl Error {
+    /// Whether retrying the operation might succeed.
+    pub fn is_retriable(&self) -> bool {
+        matches!(
+            self,
+            Error::Connection(_) | Error::Protocol(_) | Error::Io(_)
+        )
+    }
 }
