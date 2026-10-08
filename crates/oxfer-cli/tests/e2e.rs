@@ -18,6 +18,7 @@ impl Env {
         let mut c = Command::new(env!("CARGO_BIN_EXE_oxfer"));
         c.args(["-P", &self.srv.port.to_string(), "-i"])
             .arg(self.srv.client_key())
+            .args(["--ssh-config", "/nonexistent"])
             .arg("--known-hosts")
             .arg(self.srv.known_hosts())
             .args(args)
@@ -127,6 +128,7 @@ fn rejects_unknown_host_when_not_confirmed() {
     let mut c = Command::new(env!("CARGO_BIN_EXE_oxfer"));
     c.args(["-P", &e.srv.port.to_string(), "-i"])
         .arg(e.srv.client_key())
+        .args(["--ssh-config", "/nonexistent"])
         .arg("--known-hosts")
         .arg(e.srv.known_hosts())
         .arg("ls")
@@ -160,6 +162,7 @@ fn interactive_shell_session() {
     let mut c = Command::new(env!("CARGO_BIN_EXE_oxfer"));
     c.args(["-P", &e.srv.port.to_string(), "-i"])
         .arg(e.srv.client_key())
+        .args(["--ssh-config", "/nonexistent"])
         .arg("--known-hosts")
         .arg(e.srv.known_hosts())
         .arg("shell")
@@ -189,4 +192,64 @@ fn interactive_shell_session() {
     );
     assert!(!work.join("d").exists(), "rm -r should have removed d");
     assert!(err.contains("nonsense"), "unknown command reported: {err}");
+}
+
+#[test]
+fn profiles_can_be_saved_and_used() {
+    let e = setup!("cli-profile");
+    let work = e.srv.work();
+    let home = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_oxfer"));
+        c.args(args)
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join("cfg"))
+            .env("SSH_AUTH_SOCK", "")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = c.spawn().unwrap();
+        child.stdin.take().unwrap().write_all(b"yes\n").unwrap();
+        child.wait_with_output().unwrap()
+    };
+
+    let key = e.srv.client_key();
+    let port = e.srv.port.to_string();
+    ok(&run(&[
+        "profile",
+        "add",
+        "local",
+        "127.0.0.1",
+        "--port",
+        &port,
+        "--user",
+        &e.srv.user(),
+        "--auth",
+        "key",
+        "--key-file",
+        key.to_str().unwrap(),
+        "--dir",
+        work.to_str().unwrap(),
+    ]));
+    let o = run(&["profile", "list"]);
+    ok(&o);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("local"));
+
+    // adding again without --force is refused
+    assert!(!run(&["profile", "add", "local", "h", "--auth", "agent"])
+        .status
+        .success());
+
+    std::fs::write(work.join("marker.txt"), "x").unwrap();
+    let kh = e.srv.known_hosts();
+    let o = run(&["--known-hosts", kh.to_str().unwrap(), "ls", "@local"]);
+    ok(&o);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("marker.txt"));
+
+    ok(&run(&["profile", "rm", "local"]));
+    assert!(
+        !run(&["--known-hosts", kh.to_str().unwrap(), "ls", "@local"])
+            .status
+            .success()
+    );
 }

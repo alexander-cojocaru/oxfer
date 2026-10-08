@@ -1484,6 +1484,7 @@ dependencies = [
  "clap_mangen",
  "directories 6.0.0",
  "indicatif",
+ "oxfer-config",
  "oxfer-core",
  "oxfer-ftp",
  "oxfer-sftp",

@@ -1,5 +1,6 @@
 mod connect;
 mod ops;
+mod profile;
 mod progress;
 mod remote;
 mod shell;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use connect::{connect, ConnArgs};
-use oxfer_core::{LocalFs, RemoteFs, RemotePath};
+use oxfer_core::{LocalFs, RemotePath};
 use remote::RemoteSpec;
 use tracing_subscriber::EnvFilter;
 
@@ -30,6 +31,11 @@ enum Command {
     /// Print the man page (roff) to stdout
     #[command(hide = true)]
     Man,
+    /// Manage saved connection profiles (use them as @name)
+    Profile {
+        #[command(subcommand)]
+        action: profile::Action,
+    },
     /// Interactive shell on a remote host
     #[command(alias = "connect")]
     Shell { remote: RemoteSpec },
@@ -92,62 +98,60 @@ async fn run(cli: Cli) -> Result<bool> {
         Command::Man => {
             clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?;
         }
+        Command::Profile { action } => profile::run(action)?,
         Command::Shell { remote } => {
-            let fs: Arc<dyn RemoteFs> = Arc::new(connect(conn, remote).await?);
-            let label = format!("{}@{}", remote.user.as_deref().unwrap_or("-"), remote.host);
-            shell::run(fs, label, &remote.path).await?;
+            let c = connect(conn, remote).await?;
+            shell::run(c.fs, c.label, c.path.as_str()).await?;
         }
         Command::Ls { remote } => {
-            let fs = connect(conn, remote).await?;
-            let mut entries = fs.list(&rpath(remote)).await?;
+            let c = connect(conn, remote).await?;
+            let mut entries = c.fs.list(&c.path).await?;
             entries.sort_by(|a, b| a.name().cmp(b.name()));
             for e in &entries {
                 println!("{}", ops::format_entry(e));
             }
         }
         Command::Stat { remote } => {
-            let fs = connect(conn, remote).await?;
-            println!("{}", ops::format_entry(&fs.stat(&rpath(remote)).await?));
+            let c = connect(conn, remote).await?;
+            println!("{}", ops::format_entry(&c.fs.stat(&c.path).await?));
         }
         Command::Get {
             remote,
             local: dest,
             transfer,
         } => {
-            let fs: Arc<dyn RemoteFs> = Arc::new(connect(conn, remote).await?);
+            let c = connect(conn, remote).await?;
             let dest = dest.clone().unwrap_or_else(|| PathBuf::from("."));
             let dest = local(&dest.to_string_lossy());
-            let s = ops::copy(fs, Arc::new(LocalFs), &[rpath(remote)], &dest, transfer).await?;
+            let s = ops::copy(c.fs, Arc::new(LocalFs), &[c.path], &dest, transfer).await?;
             return Ok(s.is_success());
         }
         Command::Put { paths, transfer } => {
             let (dest, sources) = paths.split_last().context("missing destination")?;
             let dest: RemoteSpec = dest.parse()?;
-            let fs: Arc<dyn RemoteFs> = Arc::new(connect(conn, &dest).await?);
+            let c = connect(conn, &dest).await?;
             let sources: Vec<_> = sources.iter().map(|s| local(s)).collect();
-            let s = ops::copy(Arc::new(LocalFs), fs, &sources, &rpath(&dest), transfer).await?;
+            let s = ops::copy(Arc::new(LocalFs), c.fs, &sources, &c.path, transfer).await?;
             return Ok(s.is_success());
         }
         Command::Mkdir { remote } => {
-            connect(conn, remote).await?.mkdir(&rpath(remote)).await?;
+            let c = connect(conn, remote).await?;
+            c.fs.mkdir(&c.path).await?;
         }
         Command::Rm { remote, recursive } => {
-            let fs = connect(conn, remote).await?;
-            let path = rpath(remote);
+            let c = connect(conn, remote).await?;
             if *recursive {
-                oxfer_core::remove_all(&fs, &path).await?;
+                oxfer_core::remove_all(&*c.fs, &c.path).await?;
             } else {
-                fs.remove(&path).await?;
+                c.fs.remove(&c.path).await?;
             }
         }
         Command::Mv { from, to } => {
-            if from.host != to.host || from.user != to.user {
+            if from.host != to.host || from.user != to.user || from.profile != to.profile {
                 bail!("mv works within a single host");
             }
-            connect(conn, from)
-                .await?
-                .rename(&rpath(from), &rpath(to))
-                .await?;
+            let c = connect(conn, from).await?;
+            c.fs.rename(&c.path, &rpath(to)).await?;
         }
     }
     Ok(true)
