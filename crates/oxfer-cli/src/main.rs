@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use connect::{connect, ConnArgs};
 use oxfer_core::{LocalFs, RemoteFs, RemotePath};
 use remote::RemoteSpec;
@@ -25,6 +25,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Print shell completions to stdout
+    Completions { shell: clap_complete::Shell },
+    /// Print the man page (roff) to stdout
+    #[command(hide = true)]
+    Man,
     /// Interactive shell on a remote host
     #[command(alias = "connect")]
     Shell { remote: RemoteSpec },
@@ -81,6 +86,12 @@ fn local(p: &str) -> RemotePath {
 async fn run(cli: Cli) -> Result<bool> {
     let conn = &cli.conn;
     match &cli.command {
+        Command::Completions { shell } => {
+            clap_complete::generate(*shell, &mut Cli::command(), "oxfer", &mut std::io::stdout());
+        }
+        Command::Man => {
+            clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?;
+        }
         Command::Shell { remote } => {
             let fs: Arc<dyn RemoteFs> = Arc::new(connect(conn, remote).await?);
             let label = format!("{}@{}", remote.user.as_deref().unwrap_or("-"), remote.host);
