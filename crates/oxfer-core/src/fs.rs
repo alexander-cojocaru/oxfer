@@ -11,6 +11,11 @@ pub type BoxWrite = Box<dyn AsyncWrite + Send + Unpin>;
 pub trait RemoteFs: Send + Sync {
     async fn list(&self, path: &RemotePath) -> Result<Vec<Entry>>;
     async fn stat(&self, path: &RemotePath) -> Result<Entry>;
+    /// Canonical absolute form of `path` (resolves `.`, `..` and symlinks where
+    /// the backend can). The default is a lexical normalisation.
+    async fn realpath(&self, path: &RemotePath) -> Result<RemotePath> {
+        Ok(path.normalize())
+    }
     /// Like [`stat`](Self::stat) but does not follow a final symlink.
     async fn lstat(&self, path: &RemotePath) -> Result<Entry> {
         self.stat(path).await

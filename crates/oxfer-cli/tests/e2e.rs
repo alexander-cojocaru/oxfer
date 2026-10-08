@@ -140,3 +140,53 @@ fn rejects_unknown_host_when_not_confirmed() {
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("host key"));
 }
+
+#[test]
+fn interactive_shell_session() {
+    let e = setup!("cli-shell");
+    let work = e.srv.work();
+    let local = tempfile::tempdir().unwrap();
+    std::fs::write(local.path().join("up.txt"), "uploaded").unwrap();
+
+    // first connection records the host key so the shell itself never prompts
+    ok(&e.run(&["ls", &e.host(&work)]));
+
+    let script = format!(
+        "cd {work}\nmkdir d\ncd d\npwd\nlcd {local}\nput up.txt\nls\nget up.txt down.txt\n\
+         mv up.txt moved.txt\nls\nrm moved.txt\ncd ..\nrm -r d\nls\nnonsense\nexit\n",
+        work = work.display(),
+        local = local.path().display()
+    );
+    let mut c = Command::new(env!("CARGO_BIN_EXE_oxfer"));
+    c.args(["-P", &e.srv.port.to_string(), "-i"])
+        .arg(e.srv.client_key())
+        .arg("--known-hosts")
+        .arg(e.srv.known_hosts())
+        .arg("shell")
+        .arg(e.host(&work))
+        .env("SSH_AUTH_SOCK", "")
+        .env("HOME", local.path()) // keep history out of the real home
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    let o = child.wait_with_output().unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    let err = String::from_utf8_lossy(&o.stderr);
+
+    assert!(o.status.success(), "{out}\n{err}");
+    assert!(out.contains(&format!("{}/d", work.display())), "pwd: {out}");
+    assert!(out.contains("up.txt") && out.contains("moved.txt"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(local.path().join("down.txt")).unwrap(),
+        "uploaded"
+    );
+    assert!(!work.join("d").exists(), "rm -r should have removed d");
+    assert!(err.contains("nonsense"), "unknown command reported: {err}");
+}

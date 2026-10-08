@@ -2,6 +2,7 @@ mod connect;
 mod ops;
 mod progress;
 mod remote;
+mod shell;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,6 +25,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Interactive shell on a remote host
+    #[command(alias = "connect")]
+    Shell { remote: RemoteSpec },
     /// List a remote directory
     Ls { remote: RemoteSpec },
     /// Show metadata of a remote path
@@ -77,6 +81,11 @@ fn local(p: &str) -> RemotePath {
 async fn run(cli: Cli) -> Result<bool> {
     let conn = &cli.conn;
     match &cli.command {
+        Command::Shell { remote } => {
+            let fs: Arc<dyn RemoteFs> = Arc::new(connect(conn, remote).await?);
+            let label = format!("{}@{}", remote.user.as_deref().unwrap_or("-"), remote.host);
+            shell::run(fs, label, &remote.path).await?;
+        }
         Command::Ls { remote } => {
             let fs = connect(conn, remote).await?;
             let mut entries = fs.list(&rpath(remote)).await?;
