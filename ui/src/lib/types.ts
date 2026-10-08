@@ -140,3 +140,12 @@ export interface ServiceError {
   code: string;
   message: string;
 }
+
+export interface FilePreview {
+  /** `null` for binary files. */
+  content: string | null;
+  binary: boolean;
+  /** Only the first megabyte is included. */
+  truncated: boolean;
+  size: number;
+}

@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use oxfer_config::{Config, KeyringStore};
 use oxfer_gui::service::{
-    ConnectEnv, ConnectRequest, CredentialDto, EntryDto, EventSink, ProfileDto, ProfileStore,
-    PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError, SessionInfo,
-    SessionManager, TransferEvent, TransferRequest,
+    ConnectEnv, ConnectRequest, CredentialDto, EntryDto, EventSink, FilePreview, ProfileDto,
+    ProfileStore, PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError,
+    SessionInfo, SessionManager, TransferEvent, TransferRequest,
 };
 use tauri::{Emitter, Manager, State};
 use tracing_subscriber::EnvFilter;
@@ -136,6 +136,27 @@ fn delete_profile(state: State<'_, AppState>, name: String) -> CmdResult<()> {
 }
 
 #[tauri::command]
+async fn read_preview(
+    state: State<'_, AppState>,
+    session: String,
+    path: String,
+) -> CmdResult<FilePreview> {
+    state.svc.read_preview(&session, &path).await
+}
+
+#[tauri::command]
+async fn open_in_editor(
+    state: State<'_, AppState>,
+    session: String,
+    path: String,
+) -> CmdResult<String> {
+    state
+        .svc
+        .open_in_editor(&session, &path, state.prompter())
+        .await
+}
+
+#[tauri::command]
 fn list_credentials(state: State<'_, AppState>) -> CmdResult<Vec<CredentialDto>> {
     state.svc.profiles().list_credentials()
 }
@@ -221,6 +242,8 @@ fn main() {
             list_profiles,
             save_profile,
             delete_profile,
+            read_preview,
+            open_in_editor,
             list_credentials,
             save_credential,
             delete_credential,

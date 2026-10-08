@@ -4,6 +4,7 @@
 
 mod connect;
 mod dto;
+mod editor;
 mod error;
 mod manager;
 mod profiles;
@@ -12,6 +13,7 @@ mod transfers;
 
 pub use connect::{ConnectEnv, ConnectRequest, QuickAuth, QuickConnect};
 pub use dto::{EntryDto, EntryKindDto, ProtocolDto, SessionInfo};
+pub use editor::{system_opener, FilePreview, Opener, EDIT_LIMIT, PREVIEW_LIMIT};
 pub use error::{ServiceError, ServiceResult};
 pub use manager::{SessionManager, LOCAL_SESSION};
 pub use profiles::{AuthDto, CredentialDto, ProfileDto, ProfileStore};

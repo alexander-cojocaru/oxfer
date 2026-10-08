@@ -24,6 +24,10 @@ See [plan.md](plan.md) for the roadmap.
   directory, and **shared credentials**: save a user and login (password in the
   OS keychain, key file, agent or ask-every-time) once and use it for several
   profiles or quick connects.
+- **Desktop app**: dual-pane browser, transfer queue, text preview of files
+  (F3 or double-click) and editing in your text editor (F4). A remote file is
+  edited as a private local copy; every save is uploaded back as a transfer,
+  and the copy is removed when you disconnect.
 
 ## Usage
 

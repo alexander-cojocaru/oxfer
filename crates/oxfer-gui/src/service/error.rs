@@ -64,6 +64,12 @@ impl From<oxfer_core::Error> for ServiceError {
     }
 }
 
+impl From<std::io::Error> for ServiceError {
+    fn from(e: std::io::Error) -> Self {
+        oxfer_core::Error::Io(e).into()
+    }
+}
+
 impl From<oxfer_config::Error> for ServiceError {
     fn from(e: oxfer_config::Error) -> Self {
         use oxfer_config::Error as E;
