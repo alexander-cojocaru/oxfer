@@ -126,3 +126,36 @@ mod tests {
         assert_eq!(RemotePath::root().file_name(), None);
     }
 }
+
+#[cfg(test)]
+mod prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn normalize_is_idempotent_and_has_no_dot_segments(s in "[a-z./]{0,30}") {
+            let n = RemotePath::new(s).normalize();
+            prop_assert_eq!(n.normalize(), n.clone());
+            let abs = n.is_absolute();
+            for comp in n.as_str().split('/') {
+                prop_assert!(comp != ".." || !abs, "absolute path kept '..': {}", n);
+                prop_assert!(comp != "." || n.as_str() == ".", "stray '.': {}", n);
+            }
+        }
+
+        #[test]
+        fn absolute_normalized_paths_never_escape_root(s in "/[a-z./]{0,30}") {
+            let n = RemotePath::new(s).normalize();
+            prop_assert!(n.is_absolute());
+            prop_assert!(!n.as_str().split('/').any(|c| c == ".."));
+        }
+
+        #[test]
+        fn join_then_file_name_roundtrips(base in "/[a-z]{1,5}(/[a-z]{1,5}){0,3}", name in "[a-z0-9_.-]{1,10}") {
+            prop_assume!(name != "." && name != "..");
+            let p = RemotePath::new(base).join(&name);
+            prop_assert_eq!(p.file_name(), Some(name.as_str()));
+        }
+    }
+}
