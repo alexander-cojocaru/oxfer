@@ -24,6 +24,9 @@ pub enum Error {
     Invalid(String),
     #[error("cancelled")]
     Cancelled,
+    /// A bug in oxfer, such as a panicked task.
+    #[error("internal error: {0}")]
+    Internal(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

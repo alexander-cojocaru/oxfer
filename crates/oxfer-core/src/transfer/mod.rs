@@ -10,7 +10,9 @@ mod plan;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
+
+use sha2::{Digest, Sha256};
 
 pub use control::Control;
 pub use engine::Transfer;
@@ -21,6 +23,30 @@ use crate::{Entry, Error, RemotePath};
 /// Suffix of the temporary file a transfer writes to before the final rename.
 /// A leftover partial file is what makes resuming possible.
 pub const PART_SUFFIX: &str = ".oxfer-part";
+
+/// Where copying `src` to `dst` keeps its partial data.
+///
+/// The name carries a fingerprint of the source's size and modification time,
+/// so a leftover is only ever resumed by a transfer of the same version of the
+/// source. Without a modification time there is no fingerprint (and the
+/// engine never resumes): `<dst>.oxfer-part`.
+pub fn part_path(dst: &RemotePath, src: &Entry) -> RemotePath {
+    match fingerprint(src) {
+        Some(fp) => RemotePath::new(format!("{dst}.{fp}{PART_SUFFIX}")),
+        None => RemotePath::new(format!("{dst}{PART_SUFFIX}")),
+    }
+}
+
+fn fingerprint(src: &Entry) -> Option<String> {
+    let t = src.modified?.duration_since(UNIX_EPOCH).ok()?;
+    let h = Sha256::digest(format!(
+        "{}:{}.{:09}",
+        src.size,
+        t.as_secs(),
+        t.subsec_nanos()
+    ));
+    Some(h[..6].iter().map(|b| format!("{b:02x}")).collect())
+}
 
 pub type JobId = usize;
 

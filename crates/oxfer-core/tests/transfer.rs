@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use oxfer_core::transfer::{
-    ConflictAction, Control, Event, OverwritePolicy, Transfer, TransferOptions, PART_SUFFIX,
+    part_path, ConflictAction, Control, Event, OverwritePolicy, Transfer, TransferOptions,
+    PART_SUFFIX,
 };
 use oxfer_core::{BoxRead, BoxWrite, Entry, Error, LocalFs, RemoteFs, RemotePath, Result};
 use tempfile::TempDir;
@@ -70,7 +71,24 @@ async fn copies_directory_tree() {
         1_000_000
     );
     assert!(d.dst.join("tree/empty").is_dir());
-    assert!(!d.dst.join(format!("tree/a.txt{PART_SUFFIX}")).exists());
+    let leftovers = std::fs::read_dir(d.dst.join("tree"))
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(PART_SUFFIX)
+        })
+        .count();
+    assert_eq!(leftovers, 0);
+}
+
+/// The partial file a transfer of the local file `src` into `dst_dir` uses.
+async fn local_part(src: &Path, dst_dir: &Path) -> std::path::PathBuf {
+    let entry = LocalFs.stat(&rp(src)).await.unwrap();
+    let dst = rp(&dst_dir.join(src.file_name().unwrap()));
+    std::path::PathBuf::from(part_path(&dst, &entry).as_str())
 }
 
 #[tokio::test]
@@ -226,7 +244,7 @@ async fn resumes_partial_file_and_verifies() {
     let content: Vec<u8> = (0..600_000u32).map(|i| (i % 251) as u8).collect();
     write(&d.src.join("big"), &content);
     write(
-        &d.dst.join(format!("big{PART_SUFFIX}")),
+        &local_part(&d.src.join("big"), &d.dst).await,
         &content[..250_000],
     );
 
@@ -261,7 +279,7 @@ async fn resumes_partial_file_and_verifies() {
 async fn corrupt_partial_is_caught_by_verify() {
     let d = dirs();
     write(&d.src.join("f"), &[1u8; 100_000]);
-    write(&d.dst.join(format!("f{PART_SUFFIX}")), &[9u8; 40_000]); // wrong prefix
+    write(&local_part(&d.src.join("f"), &d.dst).await, &[9u8; 40_000]); // wrong prefix
     let o = TransferOptions {
         verify: true,
         retries: 0,
@@ -284,6 +302,103 @@ async fn corrupt_partial_is_caught_by_verify() {
         .await
         .unwrap();
     assert!(s.is_success());
+}
+
+#[tokio::test]
+async fn partial_of_an_older_source_is_not_resumed() {
+    let d = dirs();
+    let src = d.src.join("f");
+    let old: Vec<u8> = vec![1u8; 300_000];
+    write(&src, &old);
+    let stale = local_part(&src, &d.dst).await;
+    write(&stale, &old[..100_000]);
+
+    // Same size, new content and modification time: the leftover must not be used.
+    let new: Vec<u8> = vec![2u8; 300_000];
+    write(&src, &new);
+    let f = std::fs::File::options().write(true).open(&src).unwrap();
+    f.set_modified(std::time::SystemTime::now() + Duration::from_secs(60))
+        .unwrap();
+    drop(f);
+    assert_ne!(local_part(&src, &d.dst).await, stale);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let s = transfer(opts())
+        .copy(&[rp(&src)], &rp(&d.dst), Some(tx), Control::new())
+        .await
+        .unwrap();
+    assert!(s.is_success(), "{s:?}");
+    assert_eq!(std::fs::read(d.dst.join("f")).unwrap(), new);
+    let mut first = None;
+    while let Ok(ev) = rx.try_recv() {
+        if let Event::Progress { done, .. } = ev {
+            first.get_or_insert(done);
+        }
+    }
+    assert_eq!(first, Some(0));
+}
+
+/// Panics when asked to read a file named `boom`.
+struct Panicky;
+
+#[async_trait]
+impl RemoteFs for Panicky {
+    async fn list(&self, p: &RemotePath) -> Result<Vec<Entry>> {
+        LocalFs.list(p).await
+    }
+    async fn stat(&self, p: &RemotePath) -> Result<Entry> {
+        LocalFs.stat(p).await
+    }
+    async fn open_read(&self, p: &RemotePath, o: u64) -> Result<BoxRead> {
+        assert_ne!(p.file_name(), Some("boom"), "simulated bug");
+        LocalFs.open_read(p, o).await
+    }
+    async fn open_write(&self, p: &RemotePath, o: u64) -> Result<BoxWrite> {
+        LocalFs.open_write(p, o).await
+    }
+    async fn mkdir(&self, p: &RemotePath) -> Result<()> {
+        LocalFs.mkdir(p).await
+    }
+    async fn remove(&self, p: &RemotePath) -> Result<()> {
+        LocalFs.remove(p).await
+    }
+    async fn rename(&self, a: &RemotePath, b: &RemotePath) -> Result<()> {
+        LocalFs.rename(a, b).await
+    }
+}
+
+#[tokio::test]
+async fn panicked_job_is_reported_as_failed() {
+    let d = dirs();
+    write(&d.src.join("dir/ok"), b"fine");
+    write(&d.src.join("dir/boom"), b"bad");
+    let t = Transfer::new(Arc::new(Panicky), Arc::new(LocalFs), opts());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let s = t
+        .copy(
+            &[rp(&d.src.join("dir"))],
+            &rp(&d.dst),
+            Some(tx),
+            Control::new(),
+        )
+        .await
+        .unwrap();
+    assert!(!s.is_success());
+    assert_eq!(s.completed, 1);
+    assert_eq!(s.failed.len(), 1);
+    assert_eq!(s.failed[0].0, rp(&d.src.join("dir/boom")));
+    assert!(
+        matches!(s.failed[0].1, Error::Internal(_)),
+        "{:?}",
+        s.failed
+    );
+    let mut failed_events = 0;
+    while let Ok(ev) = rx.try_recv() {
+        if matches!(ev, Event::Failed { .. }) {
+            failed_events += 1;
+        }
+    }
+    assert_eq!(failed_events, 1);
 }
 
 /// Fails `open_read` the first `n` times with a transient error.

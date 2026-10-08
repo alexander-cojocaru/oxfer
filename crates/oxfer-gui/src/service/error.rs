@@ -57,6 +57,7 @@ impl From<oxfer_core::Error> for ServiceError {
             E::Unsupported(_) => "unsupported",
             E::Invalid(_) => "invalid",
             E::Cancelled => "cancelled",
+            E::Internal(_) => "internal",
             E::Io(_) => "io",
         };
         Self::new(code, e.to_string())

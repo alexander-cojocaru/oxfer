@@ -13,8 +13,11 @@ See [plan.md](plan.md) for the roadmap.
 - **Transfer engine**: recursive directories, globs, parallel files, resume of
   partial files, retries with exponential backoff, overwrite policies
   (`always` / `skip` / `newer`), optional SHA-256 verification, Ctrl-C to cancel.
-  Downloads and uploads go to `<name>.oxfer-part` first and are renamed when
-  complete, so a half-written file is never mistaken for the real one.
+  Downloads and uploads go to a `.oxfer-part` file first and are renamed when
+  complete, so a half-written file is never mistaken for the real one. The
+  partial file's name includes a fingerprint of the source's size and
+  modification time, so a transfer only resumes a partial copy of the same
+  version of the file.
 - Server-supplied file names are validated, so a hostile server cannot make a
   download write outside the destination directory.
 
