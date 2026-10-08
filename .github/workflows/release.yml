@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: tar.gz }
+          - { os: macos-13, target: x86_64-apple-darwin, ext: tar.gz }
+          - { os: macos-latest, target: aarch64-apple-darwin, ext: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: zip }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p oxfer-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="oxfer-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$name"
+          bin=oxfer; [ "${{ matrix.os }}" = windows-latest ] && bin=oxfer.exe
+          cp "target/${{ matrix.target }}/release/$bin" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+          # shell completions and man page generated from the built binary
+          if [ "${{ matrix.os }}" != windows-latest ]; then
+            mkdir -p "$name/completions"
+            for sh in bash zsh fish; do "$name/$bin" completions $sh > "$name/completions/oxfer.$sh"; done
+            "$name/$bin" man > "$name/oxfer.1"
+          fi
+          if [ "${{ matrix.ext }}" = zip ]; then 7z a "$name.zip" "$name"; else tar czf "$name.tar.gz" "$name"; fi
+          echo "ASSET=$name.${{ matrix.ext }}" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
