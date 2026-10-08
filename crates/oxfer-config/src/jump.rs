@@ -36,6 +36,7 @@ pub fn jump_chain(proxy: &str, ssh: Option<&SshConfig>) -> Result<Option<Box<Con
         let user = user
             .or_else(|| resolved.as_ref().and_then(|r| r.user.clone()))
             .or_else(|| std::env::var("USER").ok())
+            .or_else(|| std::env::var("USERNAME").ok())
             .ok_or_else(|| Error::InvalidJump(format!("{hop}: no user")))?;
         let auth = resolved
             .as_ref()

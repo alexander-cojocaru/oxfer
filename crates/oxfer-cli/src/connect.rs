@@ -213,6 +213,7 @@ async fn connect_sftp_spec(args: &ConnArgs, spec: &RemoteSpec) -> Result<SftpFs>
         .clone()
         .or(resolved.user.clone())
         .or_else(|| std::env::var("USER").ok())
+        .or_else(|| std::env::var("USERNAME").ok())
         .context("no user given (use user@host)")?;
     let host = resolved.hostname.clone();
     let port = spec.port.or(args.port).or(resolved.port).unwrap_or(22);
