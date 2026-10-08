@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use suppaftp::tokio::{AsyncRustlsStream, TransferStream};
 use suppaftp::FtpError;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::OwnedMutexGuard;
 
 use crate::fs::State;
@@ -34,6 +34,7 @@ type Stream = TransferStream<AsyncRustlsStream>;
 type Finish = Pin<Box<dyn Future<Output = io::Result<()>> + Send>>;
 
 const DROP_FINISH_TIMEOUT: Duration = Duration::from_secs(30);
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn to_io(e: FtpError) -> io::Error {
     match e {
@@ -46,6 +47,8 @@ struct Transfer {
     stream: Option<Stream>,
     finishing: Option<Finish>,
     done: bool,
+    /// Uploads: read the data connection to EOF before closing it (see `finish_upload`).
+    upload: bool,
     guard: Option<OwnedMutexGuard<State>>,
 }
 
@@ -55,6 +58,7 @@ impl Transfer {
             stream: Some(stream),
             finishing: None,
             done: false,
+            upload: false,
             guard: Some(guard),
         }
     }
@@ -74,13 +78,17 @@ impl Transfer {
             return Poll::Ready(Ok(()));
         }
         if self.finishing.is_none() {
-            let Some(stream) = self.stream.take() else {
+            let Some(mut stream) = self.stream.take() else {
                 self.done = true;
                 return Poll::Ready(Ok(()));
             };
-            self.finishing = Some(Box::pin(
-                async move { stream.finish().await.map_err(to_io) },
-            ));
+            let upload = self.upload;
+            self.finishing = Some(Box::pin(async move {
+                if upload {
+                    drain_upload(&mut stream).await;
+                }
+                stream.finish().await.map_err(to_io)
+            }));
         }
         let res = ready!(self
             .finishing
@@ -123,6 +131,21 @@ impl Drop for Transfer {
     }
 }
 
+/// Half-close an upload and read until the server closes its side.
+///
+/// With TLS 1.3 the server sends session tickets that an upload never reads.
+/// Closing a socket with unread data makes Linux send RST, which can discard
+/// data the server has not consumed yet (silently truncating the file).
+/// Draining first lets the server see a clean end of stream.
+async fn drain_upload(stream: &mut Stream) {
+    let _ = stream.shutdown().await;
+    let drain = async {
+        let mut sink = [0u8; 4096];
+        while matches!(stream.read(&mut sink).await, Ok(n) if n > 0) {}
+    };
+    let _ = tokio::time::timeout(DRAIN_TIMEOUT, drain).await;
+}
+
 pub(crate) struct FtpReader(Transfer);
 
 impl FtpReader {
@@ -158,7 +181,9 @@ pub(crate) struct FtpWriter(Transfer);
 
 impl FtpWriter {
     pub(crate) fn new(stream: Stream, guard: OwnedMutexGuard<State>) -> Self {
-        Self(Transfer::new(stream, guard))
+        let mut t = Transfer::new(stream, guard);
+        t.upload = true;
+        Self(t)
     }
 }
 
