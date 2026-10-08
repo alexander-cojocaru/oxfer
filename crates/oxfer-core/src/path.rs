@@ -34,6 +34,31 @@ impl RemotePath {
         }
     }
 
+    /// Resolve `.` and `..` lexically (no symlink resolution). `..` above the
+    /// root of an absolute path stays at the root; above a relative path it is kept.
+    pub fn normalize(&self) -> Self {
+        let mut parts: Vec<&str> = Vec::new();
+        for comp in self.0.split('/') {
+            match comp {
+                "" | "." => {}
+                ".." => match parts.last() {
+                    Some(&"..") | None if !self.is_absolute() => parts.push(".."),
+                    Some(_) => {
+                        parts.pop();
+                    }
+                    None => {}
+                },
+                c => parts.push(c),
+            }
+        }
+        let joined = parts.join("/");
+        match (self.is_absolute(), joined.is_empty()) {
+            (true, _) => Self(format!("/{joined}")),
+            (false, true) => Self(".".into()),
+            (false, false) => Self(joined),
+        }
+    }
+
     pub fn parent(&self) -> Option<Self> {
         let trimmed = self.0.trim_end_matches('/');
         let idx = trimmed.rfind('/')?;
@@ -73,6 +98,17 @@ mod tests {
         assert_eq!(RemotePath::new("/a/").join("b").as_str(), "/a/b");
         assert_eq!(RemotePath::new("a").join("b").as_str(), "a/b");
         assert_eq!(RemotePath::new("/a").join("/b").as_str(), "/b");
+    }
+
+    #[test]
+    fn normalize() {
+        let n = |s: &str| RemotePath::new(s).normalize().to_string();
+        assert_eq!(n("/a/./b/../c"), "/a/c");
+        assert_eq!(n("/.."), "/");
+        assert_eq!(n("/a//b/"), "/a/b");
+        assert_eq!(n("a/../.."), "..");
+        assert_eq!(n("a/.."), ".");
+        assert_eq!(n("../x"), "../x");
     }
 
     #[test]

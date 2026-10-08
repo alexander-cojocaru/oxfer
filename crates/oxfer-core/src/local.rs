@@ -70,6 +70,13 @@ impl RemoteFs for LocalFs {
         Ok(entry(path.clone(), &m))
     }
 
+    async fn realpath(&self, path: &RemotePath) -> Result<RemotePath> {
+        let p = tokio::fs::canonicalize(path.as_str())
+            .await
+            .map_err(|e| map_err(e, path))?;
+        Ok(RemotePath::new(p.to_string_lossy().into_owned()))
+    }
+
     async fn lstat(&self, path: &RemotePath) -> Result<Entry> {
         let m = tokio::fs::symlink_metadata(path.as_str())
             .await

@@ -75,6 +75,14 @@ impl RemoteFs for SftpFs {
         Ok(entry(path.clone(), &m))
     }
 
+    async fn realpath(&self, path: &RemotePath) -> Result<RemotePath> {
+        self.sftp
+            .canonicalize(path.as_str())
+            .await
+            .map(RemotePath::new)
+            .map_err(|e| map_err(e, path))
+    }
+
     async fn lstat(&self, path: &RemotePath) -> Result<Entry> {
         let m = self
             .sftp
