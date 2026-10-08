@@ -70,6 +70,13 @@ impl RemoteFs for LocalFs {
         Ok(entry(path.clone(), &m))
     }
 
+    async fn lstat(&self, path: &RemotePath) -> Result<Entry> {
+        let m = tokio::fs::symlink_metadata(path.as_str())
+            .await
+            .map_err(|e| map_err(e, path))?;
+        Ok(entry(path.clone(), &m))
+    }
+
     async fn open_read(&self, path: &RemotePath, offset: u64) -> Result<BoxRead> {
         let mut f = tokio::fs::File::open(path.as_str())
             .await

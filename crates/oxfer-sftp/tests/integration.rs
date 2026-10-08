@@ -1,132 +1,48 @@
 //! Integration tests against a throwaway unprivileged `sshd`.
 //! Skipped (with a message) when sshd / sftp-server are not available.
 
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 
 use oxfer_core::{Error, RemoteFs, RemotePath};
 use oxfer_sftp::{Auth, ConnectOptions, HostKeyDecision, SftpFs};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-struct Server {
-    dir: tempdir::Dir,
-    child: Child,
-    port: u16,
-}
+struct Server(oxfer_testutil::Server);
 
-mod tempdir {
-    use std::path::{Path, PathBuf};
-    pub struct Dir(PathBuf);
-    impl Dir {
-        pub fn new(tag: &str) -> Self {
-            let p = std::env::temp_dir().join(format!("oxfer-{tag}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&p);
-            std::fs::create_dir_all(&p).unwrap();
-            Dir(p)
-        }
-        pub fn path(&self) -> &Path {
-            &self.0
-        }
+impl std::ops::Deref for Server {
+    type Target = oxfer_testutil::Server;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
-    impl Drop for Dir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-fn find(paths: &[&str]) -> Option<PathBuf> {
-    paths.iter().map(PathBuf::from).find(|p| p.exists())
-}
-
-fn keygen(path: &Path) {
-    let ok = Command::new("ssh-keygen")
-        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
-        .arg(path)
-        .status()
-        .unwrap()
-        .success();
-    assert!(ok, "ssh-keygen failed");
-}
-
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 impl Server {
     fn start(tag: &str) -> Option<Self> {
-        let sshd = find(&["/usr/sbin/sshd", "/usr/bin/sshd"])?;
-        let sftp = find(&[
-            "/usr/libexec/sftp-server",
-            "/usr/lib/openssh/sftp-server",
-            "/usr/lib/ssh/sftp-server",
-        ])?;
-        let dir = tempdir::Dir::new(tag);
-        let d = dir.path();
-        keygen(&d.join("host"));
-        keygen(&d.join("client"));
-        std::fs::copy(d.join("client.pub"), d.join("authorized_keys")).unwrap();
-        let port = free_port();
-        let conf = format!(
-            "Port {port}\nListenAddress 127.0.0.1\nHostKey {d}/host\nPidFile {d}/pid\n\
-             AuthorizedKeysFile {d}/authorized_keys\nStrictModes no\nUsePAM no\n\
-             PasswordAuthentication no\nPubkeyAuthentication yes\n\
-             Subsystem sftp {sftp}\n",
-            d = d.display(),
-            sftp = sftp.display()
-        );
-        std::fs::write(d.join("sshd_config"), conf).unwrap();
-        let child = Command::new(sshd)
-            .args(["-D", "-e", "-f"])
-            .arg(d.join("sshd_config"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
-        // wait for the port to accept connections
-        for _ in 0..100 {
-            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-                return Some(Server { dir, child, port });
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        None
+        oxfer_testutil::Server::start(tag).map(Server)
     }
 
     fn opts(&self, decision: HostKeyDecision) -> ConnectOptions {
-        let user = std::env::var("USER").unwrap_or_else(|_| "root".into());
         let mut o = ConnectOptions::new(
             "127.0.0.1",
-            user,
+            self.user(),
             Auth::Key {
-                path: self.dir.path().join("client"),
+                path: self.client_key(),
                 passphrase: None,
             },
         );
         o.port = self.port;
-        o.known_hosts = Some(self.dir.path().join("known_hosts"));
+        o.known_hosts = Some(self.known_hosts());
         o.verifier = Arc::new(move |_| decision);
         o
     }
 
-    /// Scratch directory the tests can use as the remote working area.
     fn work(&self) -> RemotePath {
-        let w = self.dir.path().join("work");
-        std::fs::create_dir_all(&w).unwrap();
-        RemotePath::new(w.to_string_lossy().to_string())
+        RemotePath::new(self.0.work().to_string_lossy().to_string())
     }
+}
+
+fn keygen(p: &std::path::Path) {
+    oxfer_testutil::keygen(p)
 }
 
 macro_rules! server {

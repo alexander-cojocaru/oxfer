@@ -11,6 +11,10 @@ pub type BoxWrite = Box<dyn AsyncWrite + Send + Unpin>;
 pub trait RemoteFs: Send + Sync {
     async fn list(&self, path: &RemotePath) -> Result<Vec<Entry>>;
     async fn stat(&self, path: &RemotePath) -> Result<Entry>;
+    /// Like [`stat`](Self::stat) but does not follow a final symlink.
+    async fn lstat(&self, path: &RemotePath) -> Result<Entry> {
+        self.stat(path).await
+    }
     /// Open a file for reading, starting at byte `offset`.
     async fn open_read(&self, path: &RemotePath, offset: u64) -> Result<BoxRead>;
     /// Open a file for writing, starting at byte `offset` (0 truncates/creates).
