@@ -1,6 +1,17 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# oxfer-gui (Tauri) needs system webview libraries (webkit2gtk on Linux) and
+# the built frontend; it is left out of plain `cargo build/test`. Use
+# `-p oxfer-gui` to build it explicitly.
+default-members = [
+    "crates/oxfer-cli",
+    "crates/oxfer-config",
+    "crates/oxfer-core",
+    "crates/oxfer-ftp",
+    "crates/oxfer-sftp",
+    "crates/oxfer-testutil",
+]
 
 [workspace.package]
 version = "0.1.0"
