@@ -88,6 +88,8 @@ impl Runner {
                     self.fs[to].clone(),
                     TransferOptions {
                         recursive: true,
+                        // names come from the file list, not from user patterns
+                        glob: false,
                         ..Default::default()
                     },
                 );
