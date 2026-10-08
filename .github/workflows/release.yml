@@ -42,3 +42,20 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ASSET }}
+
+  formula:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render Homebrew formula from the published archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir archives
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir archives
+          scripts/gen-formula.sh "$GITHUB_REPOSITORY" "${GITHUB_REF_NAME#v}" archives > oxfer.rb
+          cat oxfer.rb
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: oxfer.rb

@@ -33,6 +33,13 @@ Common options: `-P <port>`, `-i <key>`, `--agent`, `--known-hosts <file>`.
 Without `-i`/`--agent`, oxfer tries the ssh-agent, then `~/.ssh/id_*`, then asks
 for a password.
 
+## Install
+
+Tagged releases publish binaries (with man page and shell completions) and a
+generated Homebrew formula `oxfer.rb` as release assets. Copy the formula into
+your own tap (`brew tap-new you/tap`, add `oxfer.rb` under `Formula/`), then
+`brew install you/tap/oxfer`. From source: `cargo install --path crates/oxfer-cli`.
+
 ## Performance
 
 Loopback comparison against OpenSSH `sftp` (Apple silicon, release build,
