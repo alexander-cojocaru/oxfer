@@ -71,9 +71,9 @@ Transfer engine sits on top: queue, concurrency, progress events, resume, retrie
 | M1 SFTP basics | done (password / key / agent, known_hosts TOFU, integration tests vs real sshd) |
 | M2 Interactive shell | done |
 | M3 Transfer engine | done |
-| M4 FTP / FTPS | done (plain FTP and FTPS explicit+implicit tested against mock servers, incl. certificate verification; no real-world FTP server tried) |
+| M4 FTP / FTPS | done (plain FTP and FTPS explicit+implicit tested against mock servers, incl. certificate verification; also run by hand against real vsftpd (plain FTP) and pyftpdlib (plain + explicit FTPS, 3 MB roundtrip, mkdir/mv/rm, default cert verification rejects self-signed); implicit FTPS and other servers untested. Real vsftpd's TLS mode crashed in the arm64 container, so TLS there is untested) |
 | M5 Config & profiles | done (incl. ProxyJump chains; profile names as jump hosts unsupported) |
-| M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS; on Linux (Ubuntu 24.04 arm64 container) fmt, clippy incl. the GUI, and the full test suite against a real sshd pass; GUI not launched there) |
+| M6 Desktop GUI | done (Tauri 2 + Svelte; builds and starts on macOS; on Linux (Ubuntu 24.04 arm64 container) fmt, clippy incl. the GUI, and the full test suite against a real sshd pass; the GUI also builds and runs for 20 s under Xvfb without panicking, but nobody has clicked through it on Linux) |
 | M7 TUI | done (unit/render tests plus a pseudo-terminal test driving a real session) |
 | M8 Polish & release | done: completions, man page, release workflow (binaries + generated Homebrew formula), benchmarks, property tests. The release workflow itself has not been run (needs a pushed tag) |
 
