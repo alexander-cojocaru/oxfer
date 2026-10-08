@@ -3,7 +3,6 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use oxfer_core::{BoxRead, BoxWrite, Entry, EntryKind, Error, RemoteFs, RemotePath, Result};
-use russh::client::{Handle, Handler};
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
@@ -13,14 +12,17 @@ use tokio::io::AsyncSeekExt;
 pub struct SftpFs {
     sftp: SftpSession,
     // Keeps the SSH connection alive for as long as the SFTP session is used.
-    _session: Box<dyn std::any::Any + Send + Sync>,
+    _sessions: Box<dyn std::any::Any + Send + Sync>,
 }
 
 impl SftpFs {
-    pub(crate) fn new<H: Handler + 'static>(sftp: SftpSession, session: Handle<H>) -> Self {
+    pub(crate) fn new(
+        sftp: SftpSession,
+        sessions: Vec<Box<dyn std::any::Any + Send + Sync>>,
+    ) -> Self {
         Self {
             sftp,
-            _session: Box::new(session),
+            _sessions: Box::new(sessions),
         }
     }
 }

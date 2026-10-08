@@ -112,9 +112,6 @@ impl Profile {
             .proxy_jump
             .clone()
             .or_else(|| resolved.as_ref().and_then(|r| r.proxy_jump.clone()));
-        if let Some(p) = proxy {
-            return Err(Error::ProxyJumpUnsupported(p));
-        }
         let host = resolved
             .as_ref()
             .map_or_else(|| self.host.clone(), |r| r.hostname.clone());
@@ -143,6 +140,9 @@ impl Profile {
         };
         let mut opts = ConnectOptions::new(host, user, auth);
         opts.port = port;
+        if let Some(p) = proxy {
+            opts.jump = crate::jump_chain(&p, ssh)?;
+        }
         Ok(opts)
     }
 }
@@ -207,16 +207,18 @@ mod tests {
             Err(Error::InteractiveAuth(_))
         ));
         let mut p = prof(AuthMethod::Agent);
-        p.proxy_jump = Some("jump".into());
-        assert!(matches!(
-            p.to_sftp_options(&store, None),
-            Err(Error::ProxyJumpUnsupported(_))
-        ));
+        p.proxy_jump = Some("ops@jump:2200".into());
+        let o = p.to_sftp_options(&store, None).unwrap();
+        let j = o.jump.expect("jump configured");
+        assert_eq!(
+            (j.host.as_str(), j.port, j.user.as_str()),
+            ("jump", 2200, "ops")
+        );
         let cfg = SshConfig::parse("Host web\n ProxyJump bastion\n");
-        assert!(matches!(
-            prof(AuthMethod::Agent).to_sftp_options(&store, Some(&cfg)),
-            Err(Error::ProxyJumpUnsupported(_))
-        ));
+        let o = prof(AuthMethod::Agent)
+            .to_sftp_options(&store, Some(&cfg))
+            .unwrap();
+        assert_eq!(o.jump.unwrap().host, "bastion");
         let mut p = prof(AuthMethod::Agent);
         p.protocol = Protocol::Ftp;
         assert!(matches!(

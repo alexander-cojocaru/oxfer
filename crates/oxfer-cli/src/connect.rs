@@ -200,6 +200,9 @@ async fn connect_profile(args: &ConnArgs, profile: &Profile) -> Result<Arc<dyn R
 fn apply_sftp_common(args: &ConnArgs, opts: &mut ConnectOptions) {
     opts.known_hosts = args.known_hosts.clone();
     opts.verifier = Arc::new(confirm_host_key);
+    if let Some(jump) = opts.jump.as_mut() {
+        apply_sftp_common(args, jump);
+    }
 }
 
 async fn connect_sftp_spec(args: &ConnArgs, spec: &RemoteSpec) -> Result<SftpFs> {
@@ -247,10 +250,15 @@ async fn connect_sftp_spec(args: &ConnArgs, spec: &RemoteSpec) -> Result<SftpFs>
         }));
     }
 
+    let jump = match &resolved.proxy_jump {
+        Some(p) => oxfer_config::jump_chain(p, Some(&ssh))?,
+        None => None,
+    };
     let mut last_err = None;
     for auth in candidates {
         let mut opts = ConnectOptions::new(host.clone(), user.clone(), auth);
         opts.port = port;
+        opts.jump = jump.clone();
         apply_sftp_common(args, &mut opts);
         match SftpFs::connect(opts).await {
             Ok(fs) => return Ok(fs),
@@ -269,6 +277,7 @@ async fn connect_sftp_spec(args: &ConnArgs, spec: &RemoteSpec) -> Result<SftpFs>
         Auth::Password(ask_password(&user, &host)?),
     );
     opts.port = port;
+    opts.jump = jump;
     apply_sftp_common(args, &mut opts);
     Ok(SftpFs::connect(opts).await?)
 }

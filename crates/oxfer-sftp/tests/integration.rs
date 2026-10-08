@@ -177,3 +177,43 @@ async fn wrong_key_is_auth_error() {
     let err = SftpFs::connect(o).await.err().expect("must fail");
     assert!(matches!(err, Error::Auth(_)), "{err:?}");
 }
+
+#[tokio::test]
+async fn connects_through_a_jump_host() {
+    let srv = server!("jump");
+    // jump through the server to itself (loopback), then talk SFTP over the tunnel
+    let mut target = srv.opts(HostKeyDecision::AcceptAndSave);
+    target.jump = Some(Box::new(srv.opts(HostKeyDecision::AcceptAndSave)));
+    let fs = SftpFs::connect(target).await.unwrap();
+    let work = srv.work();
+    std::fs::write(srv.0.work().join("via-jump.txt"), "x").unwrap();
+    let names: Vec<_> = fs
+        .list(&work)
+        .await
+        .unwrap()
+        .iter()
+        .map(|e| e.name().to_string())
+        .collect();
+    assert!(names.contains(&"via-jump.txt".to_string()), "{names:?}");
+}
+
+#[tokio::test]
+async fn unreachable_target_through_jump_is_connection_error() {
+    let srv = server!("jump-bad");
+    let mut target = srv.opts(HostKeyDecision::AcceptOnce);
+    target.port = free_closed_port();
+    target.jump = Some(Box::new(srv.opts(HostKeyDecision::AcceptOnce)));
+    let err = SftpFs::connect(target).await.err().expect("must fail");
+    assert!(
+        matches!(err, Error::Connection(ref m) if m.contains("jump host")),
+        "{err:?}"
+    );
+}
+
+fn free_closed_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
