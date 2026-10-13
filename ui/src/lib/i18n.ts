@@ -12,6 +12,7 @@ const en = {
   noProfiles: 'No saved profiles yet.',
   newProfile: 'New profile',
   editProfile: 'Edit profile',
+  moveProfile: 'Move to group',
   deleteProfile: 'Delete profile',
   deleteProfileConfirm: 'Delete the profile "{name}"? Its stored password is removed from the keychain.',
   profileName: 'Profile name',
