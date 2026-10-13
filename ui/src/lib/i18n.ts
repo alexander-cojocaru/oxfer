@@ -17,6 +17,7 @@ const en = {
   profileName: 'Profile name',
   group: 'Group',
   noGroup: 'No group',
+  groupHint: 'Use / for sub groups, e.g. Customers/ACME',
   searchProfiles: 'Search profiles',
   noProfileMatches: 'No profiles match.',
   preview: 'Preview',

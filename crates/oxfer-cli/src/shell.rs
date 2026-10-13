@@ -53,6 +53,9 @@ enum Cmd {
     },
     /// Create remote directories
     Mkdir {
+        /// Create missing parent directories
+        #[arg(short, long)]
+        parents: bool,
         #[arg(required = true)]
         paths: Vec<String>,
     },
@@ -332,9 +335,14 @@ async fn execute(fs: &Arc<dyn RemoteFs>, st: &Shared, cmd: Cmd) -> Result<()> {
             };
             ops::copy(Arc::new(LocalFs), fs.clone(), &sources, &dest, &transfer).await?;
         }
-        Cmd::Mkdir { paths } => {
+        Cmd::Mkdir { parents, paths } => {
             for p in paths {
-                fs.mkdir(&rpath(st, &p)).await?;
+                let p = rpath(st, &p);
+                if parents {
+                    oxfer_core::mkdir_all(&**fs, &p).await?;
+                } else {
+                    fs.mkdir(&p).await?;
+                }
             }
         }
         Cmd::Rm { recursive, paths } => {
