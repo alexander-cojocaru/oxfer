@@ -168,7 +168,7 @@
       </label>
       <label class="field wide">
         <span>{t('group')}</span>
-        <input bind:value={group} list="profile-groups" placeholder={t('noGroup')} autocomplete="off" spellcheck="false" />
+        <input bind:value={group} list="profile-groups" placeholder={t('noGroup')} title={t('groupHint')} autocomplete="off" spellcheck="false" />
         <datalist id="profile-groups">
           {#each groups as g (g)}
             <option value={g}></option>

@@ -139,7 +139,9 @@ impl Profile {
             return bad("port must not be 0");
         }
         if let Some(g) = &self.group {
-            if g.trim().is_empty() || g.trim() != g || g.chars().any(char::is_control) {
+            // `/` separates sub groups (`Customers/ACME`); no empty or padded levels.
+            let clean = g.split('/').all(|s| !s.is_empty() && s.trim() == s);
+            if !clean || g.chars().any(char::is_control) {
                 return bad("bad group name");
             }
         }
@@ -299,11 +301,11 @@ mod tests {
     #[test]
     fn group_must_be_a_clean_name() {
         let mut p = prof(AuthMethod::Agent);
-        for good in ["Work", "Customers/ACME", "a b"] {
+        for good in ["Work", "Customers/ACME", "a/b/c", "a b"] {
             p.group = Some(good.into());
             assert!(p.validate().is_ok(), "{good:?}");
         }
-        for bad in ["", " ", " Work", "a\tb"] {
+        for bad in ["", " ", " Work", "a\tb", "/a", "a/", "a//b", "a/ b/c"] {
             p.group = Some(bad.into());
             assert!(p.validate().is_err(), "{bad:?}");
         }

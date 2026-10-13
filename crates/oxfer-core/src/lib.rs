@@ -10,7 +10,7 @@ pub mod transfer;
 
 pub use entry::{Entry, EntryKind};
 pub use error::{Error, Result};
-pub use fs::{BoxRead, BoxWrite, RemoteFs};
-pub use fsutil::remove_all;
+pub use fs::{BoxRead, BoxWrite, RemoteFs, Shell, ShellControl};
+pub use fsutil::{mkdir_all, remove_all};
 pub use local::LocalFs;
 pub use path::RemotePath;

@@ -69,7 +69,12 @@ enum Command {
         transfer: ops::TransferArgs,
     },
     /// Create a remote directory
-    Mkdir { remote: RemoteSpec },
+    Mkdir {
+        remote: RemoteSpec,
+        /// Create missing parent directories (no error if it already exists)
+        #[arg(short, long)]
+        parents: bool,
+    },
     /// Remove a remote file or directory
     Rm {
         remote: RemoteSpec,
@@ -148,9 +153,13 @@ async fn run(cli: Cli) -> Result<bool> {
             let s = ops::copy(Arc::new(LocalFs), c.fs, &sources, &c.path, transfer).await?;
             return Ok(s.is_success());
         }
-        Command::Mkdir { remote } => {
+        Command::Mkdir { remote, parents } => {
             let c = connect(conn, remote).await?;
-            c.fs.mkdir(&c.path).await?;
+            if *parents {
+                oxfer_core::mkdir_all(&*c.fs, &c.path).await?;
+            } else {
+                c.fs.mkdir(&c.path).await?;
+            }
         }
         Command::Rm { remote, recursive } => {
             let c = connect(conn, remote).await?;

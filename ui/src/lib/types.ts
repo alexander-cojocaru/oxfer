@@ -121,6 +121,10 @@ export type TransferEvent =
       cancelled: boolean;
     };
 
+export type TerminalEvent =
+  | { kind: 'output'; terminalId: number; data: number[] }
+  | { kind: 'closed'; terminalId: number };
+
 export type Prompt =
   | { kind: 'hostKey'; host: string; port: number; algorithm: string; fingerprint: string }
   | { kind: 'password'; user: string; host: string; secret: 'password' | 'passphrase'; retry: boolean }

@@ -28,6 +28,7 @@ function prof(name: string, group: string | null, host = `${name}.example.com`):
 function renderSidebar() {
   const onconnectprofile = vi.fn();
   const oneditcredential = vi.fn();
+  const onterminal = vi.fn();
   render(Sidebar, {
     props: {
       connecting: null,
@@ -38,9 +39,10 @@ function renderSidebar() {
       onnewcredential: vi.fn(),
       oneditcredential,
       ondisconnect: vi.fn(),
+      onterminal,
     },
   });
-  return { onconnectprofile, oneditcredential };
+  return { onconnectprofile, oneditcredential, onterminal };
 }
 
 const connectButtons = () =>
@@ -105,5 +107,20 @@ describe('Sidebar profiles', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(api.deleteCredential).toHaveBeenCalledWith('deploy');
     expect(app.toasts.at(-1)?.message).toMatch(/used by web/);
+  });
+});
+
+describe('Sidebar terminal', () => {
+  it('offers a terminal for SFTP connections only', async () => {
+    const user = userEvent.setup();
+    app.sessions = [
+      { id: 's1', label: 'me@box', protocol: 'sftp', home: '/' },
+      { id: 's2', label: 'me@ftp', protocol: 'ftp', home: '/' },
+    ];
+    const { onterminal } = renderSidebar();
+    expect(screen.queryByRole('button', { name: 'Open terminal me@ftp' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Open terminal me@box' }));
+    expect(onterminal).toHaveBeenCalledWith(app.sessions[0]);
+    app.sessions = [];
   });
 });

@@ -3,6 +3,7 @@
   import { api, errorMessage } from '../lib/api';
   import { formatBytes } from '../lib/format';
   import { t } from '../lib/i18n';
+  import { app } from '../lib/state.svelte';
   import type { Entry, FilePreview, SessionId } from '../lib/types';
 
   let {
@@ -39,6 +40,17 @@
     };
   });
 
+  async function copy() {
+    const text = preview?.content;
+    if (text == null) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      app.toast('success', t('copiedToClipboard'));
+    } catch (e) {
+      app.error(e);
+    }
+  }
+
   const lineCount = $derived(preview?.content ? preview.content.split('\n').length : 0);
 </script>
 
@@ -68,6 +80,9 @@
     <pre class="content mono" class:wrap tabindex="0" aria-label={t('previewOf', { name: entry.name })}>{preview.content}</pre>
   {/if}
   {#snippet footer()}
+    {#if preview?.content != null}
+      <button type="button" class="btn" onclick={copy}>{t('copyToClipboard')}</button>
+    {/if}
     <button type="button" class="btn" onclick={() => oneditor(entry)} title="F4">{t('openInEditor')}</button>
     <button type="button" class="btn primary" data-autofocus onclick={onclose}>{t('close')}</button>
   {/snippet}

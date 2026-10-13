@@ -4,7 +4,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n';
-  import { groupProfiles } from '../lib/profiles';
+  import { groupNames, groupProfiles, parentGroups } from '../lib/profiles';
   import type { Credential, Profile, SessionInfo } from '../lib/types';
 
   let {
@@ -16,6 +16,7 @@
     onnewcredential,
     oneditcredential,
     ondisconnect,
+    onterminal,
   }: {
     connecting: string | null;
     onconnectprofile: (p: Profile) => void;
@@ -25,6 +26,7 @@
     onnewcredential: () => void;
     oneditcredential: (c: Credential) => void;
     ondisconnect: (s: SessionInfo) => void;
+    onterminal: (s: SessionInfo) => void;
   } = $props();
 
   let confirmDelete = $state<Profile | null>(null);
@@ -82,6 +84,10 @@
 
   // While searching, show every match regardless of collapsed groups.
   const isOpen = (name: string | null) => name === null || query.trim() !== '' || !collapsed.has(name);
+  // Depth is unlimited; indentation stops growing so deep trees keep room for the labels.
+  const indent = (depth: number) => Math.min(depth, 8) * 14;
+  // A sub group is hidden while any of its parents is collapsed.
+  const isShown = (name: string | null) => name === null || parentGroups(name).every(isOpen);
 
   async function remove(p: Profile) {
     confirmDelete = null;
@@ -93,8 +99,50 @@
     }
   }
 
+  // Moving only changes the group; the name stays, so a stored password is kept.
+  let moving = $state<string | null>(null);
+  let dragged = $state<string | null>(null);
+  let dropTarget = $state<string | null>(null);
+  const allGroups = $derived(groupNames(app.profiles));
+
+  async function moveTo(name: string, group: string | null) {
+    moving = null;
+    dragged = null;
+    dropTarget = null;
+    const p = app.profiles.find((x) => x.name === name);
+    if (!p || (p.group ?? null) === group) return;
+    try {
+      await api.saveProfile(p.name, { ...p, group }, null);
+      await app.loadProfiles();
+    } catch (e) {
+      app.error(e);
+    }
+  }
+
+  // `target` is a group path, or `''` for the ungrouped list.
+  const dropProps = (target: string) => ({
+    ondragover: (e: DragEvent) => {
+      if (dragged === null) return;
+      e.preventDefault();
+      dropTarget = target;
+    },
+    ondragleave: () => {
+      if (dropTarget === target) dropTarget = null;
+    },
+    ondrop: (e: DragEvent) => {
+      e.preventDefault();
+      if (dragged !== null) void moveTo(dragged, target || null);
+    },
+  });
+
   function protoLabel(p: Profile['protocol']) {
     return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : 'FTPS';
+  }
+
+  // Tooltip for the (possibly ellipsized) profile row: full name plus target.
+  function profileTitle(p: Profile) {
+    const user = p.user && !p.credential ? `${p.user}@` : '';
+    return `${p.name}\n${protoLabel(p.protocol)} · ${user}${p.host}`;
   }
 </script>
 
@@ -112,6 +160,11 @@
         <li class="item">
           <span class="dot" aria-hidden="true"></span>
           <span class="label" title={s.label}>{s.label}</span>
+          {#if s.protocol === 'sftp'}
+            <button type="button" class="btn icon ghost" aria-label="{t('openTerminal')} {s.label}" title={t('openTerminal')} onclick={() => onterminal(s)}>
+              <Icon name="terminal" size={14} />
+            </button>
+          {/if}
           <button type="button" class="btn icon ghost" aria-label="{t('disconnect')} {s.label}" title={t('disconnect')} onclick={() => ondisconnect(s)}>
             <Icon name="x" size={14} />
           </button>
@@ -120,7 +173,7 @@
     </ul>
   {/if}
 
-  <div class="head">
+  <div class="head" class:drop={dropTarget === ''} {...dropProps('')}>
     <h3>{t('savedProfiles')}</h3>
     <button type="button" class="btn icon ghost" aria-label={t('newProfile')} title={t('newProfile')} onclick={onnewprofile}>
       <Icon name="plus" size={14} />
@@ -150,29 +203,51 @@
       <p class="empty">{t('noProfileMatches')}</p>
     {/if}
     {#each groups as g (g.name ?? '')}
+      {#if isShown(g.name)}
       {#if g.name !== null}
         {@const open = isOpen(g.name)}
         <button
           type="button"
           class="group"
+          class:drop={dropTarget === g.name}
+          {...dropProps(g.name)}
+          style:padding-left="{6 + indent(g.depth)}px"
           aria-expanded={open}
           onclick={() => toggleGroup(g.name!)}
         >
           <span class="chevron" class:open aria-hidden="true">▸</span>
           <Icon name="folder" size={14} />
-          <span class="group-name">{g.name}</span>
-          <span class="count">{g.profiles.length}</span>
+          <span class="group-name" title={g.name}>{g.label}</span>
+          <span class="count">{g.total}</span>
         </button>
       {/if}
       {#if isOpen(g.name)}
-        <ul class:nested={g.name !== null} aria-label={g.name ?? t('savedProfiles')}>
+        <ul
+          class:nested={g.name !== null}
+          style:padding-left={g.name !== null ? `${14 + indent(g.depth)}px` : undefined}
+          aria-label={g.name ?? t('savedProfiles')}
+        >
           {#each g.profiles as p (p.name)}
-            <li class="item profile">
+            <li
+              class="item profile"
+              class:dragging={dragged === p.name}
+              draggable="true"
+              ondragstart={(e) => {
+                dragged = p.name;
+                e.dataTransfer?.setData('text/plain', p.name);
+                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+              }}
+              ondragend={() => {
+                dragged = null;
+                dropTarget = null;
+              }}
+            >
               <button
                 type="button"
                 class="connect"
                 disabled={connecting !== null}
                 aria-label="{t('connect')} {p.name}"
+                title={profileTitle(p)}
                 onclick={() => onconnectprofile(p)}
               >
                 <Icon name="server" size={14} />
@@ -185,6 +260,16 @@
                 </span>
                 {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
               </button>
+              <button
+                type="button"
+                class="btn icon ghost"
+                aria-label="{t('moveProfile')} {p.name}"
+                aria-expanded={moving === p.name}
+                title={t('moveProfile')}
+                onclick={() => (moving = moving === p.name ? null : p.name)}
+              >
+                <Icon name="folder" size={14} />
+              </button>
               <button type="button" class="btn icon ghost" aria-label="{t('editProfile')} {p.name}" title={t('editProfile')} onclick={() => oneditprofile(p)}>
                 <Icon name="edit" size={14} />
               </button>
@@ -192,8 +277,29 @@
                 <Icon name="trash" size={14} />
               </button>
             </li>
+            {#if moving === p.name}
+              <li class="move">
+                <select
+                  aria-label="{t('moveProfile')} {p.name}"
+                  value={p.group ?? ''}
+                  onchange={(e) => moveTo(p.name, e.currentTarget.value || null)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      moving = null;
+                    }
+                  }}
+                >
+                  <option value="">{t('noGroup')}</option>
+                  {#each allGroups as name (name)}
+                    <option value={name}>{name}</option>
+                  {/each}
+                </select>
+              </li>
+            {/if}
           {/each}
         </ul>
+      {/if}
       {/if}
     {/each}
   {/if}
@@ -211,7 +317,7 @@
       {#each app.credentials as c (c.name)}
         <li class="item">
           <Icon name="key" size={14} />
-          <span class="label">
+          <span class="label" title={c.name}>
             <span class="name">{c.name}</span>
             <span class="sub">{c.user ? `${c.user} · ` : ''}{authLabel(c.auth)}</span>
           </span>
@@ -402,6 +508,20 @@
   .count {
     font-size: 11px;
     color: var(--fg-faint);
+  }
+  .drop {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+  }
+  .dragging {
+    opacity: 0.5;
+  }
+  .move {
+    list-style: none;
+    padding: 0 4px 4px 22px;
+  }
+  .move select {
+    width: 100%;
   }
   ul.nested {
     padding-left: 14px;
