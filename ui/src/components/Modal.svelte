@@ -83,6 +83,7 @@
     position: fixed;
     inset: 0;
     background: rgb(10 12 18 / 0.45);
+    backdrop-filter: blur(2px);
     display: grid;
     place-items: center;
     z-index: 100;
@@ -93,14 +94,14 @@
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--shadow);
-    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
     display: flex;
     flex-direction: column;
     outline: none;
     animation: pop 0.14s ease-out;
   }
   header {
-    padding: 16px 20px 4px;
+    padding: 16px 20px 8px;
   }
   h2 {
     margin: 0;
@@ -117,6 +118,9 @@
     gap: 8px;
     padding: 12px 20px 16px;
     flex-wrap: wrap;
+    border-top: 1px solid var(--border);
+    background: var(--bg-sunken);
+    border-radius: 0 0 12px 12px;
   }
   @keyframes fade {
     from {

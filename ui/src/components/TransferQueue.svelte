@@ -174,6 +174,7 @@
   .status {
     font-size: 12px;
     color: var(--fg-muted);
+    white-space: nowrap;
   }
   .failed .status,
   span.failed {
@@ -249,6 +250,7 @@
   .num {
     width: 36px;
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .msg {
     color: var(--warn);

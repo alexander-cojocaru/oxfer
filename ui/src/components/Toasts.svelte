@@ -41,7 +41,17 @@
   }
   .toast.error {
     border-left-color: var(--danger);
+  }
+  .toast > :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: var(--accent);
+  }
+  .toast.error > :global(svg) {
     color: var(--danger);
+  }
+  .toast.success > :global(svg) {
+    color: var(--ok);
   }
   .toast.success {
     border-left-color: var(--ok);
