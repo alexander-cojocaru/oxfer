@@ -11,7 +11,6 @@
   let {
     connecting,
     onconnectprofile,
-    onquickconnect,
     onnewprofile,
     oneditprofile,
     onnewcredential,
@@ -22,7 +21,6 @@
   }: {
     connecting: string | null;
     onconnectprofile: (p: Profile) => void;
-    onquickconnect: () => void;
     onnewprofile: () => void;
     oneditprofile: (p: Profile) => void;
     onnewcredential: () => void;
@@ -80,6 +78,32 @@
     collapsed = next;
     try {
       localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+    } catch {
+      // not persisted; fine
+    }
+  }
+
+  // Collapsed sidebar sections survive restarts too.
+  const SECTIONS_KEY = 'oxfer.collapsedSections';
+  type Section = 'profiles' | 'credentials';
+  function loadSections(): Set<Section> {
+    try {
+      const v: unknown = JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? '[]');
+      return new Set(Array.isArray(v) ? v.filter((x): x is Section => x === 'profiles' || x === 'credentials') : []);
+    } catch {
+      return new Set();
+    }
+  }
+  let closedSections = $state(loadSections());
+  const profilesOpen = $derived(!closedSections.has('profiles'));
+  const credentialsOpen = $derived(!closedSections.has('credentials'));
+
+  function toggleSection(name: Section) {
+    const next = new Set(closedSections);
+    if (!next.delete(name)) next.add(name);
+    closedSections = next;
+    try {
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify([...next]));
     } catch {
       // not persisted; fine
     }
@@ -179,15 +203,9 @@
 </script>
 
 <aside aria-label={t('connections')}>
-  <div class="actions">
-    <button type="button" class="btn primary" onclick={onquickconnect} title="{t('quickConnect')} (Ctrl+N)">
-      <Icon name="plug" />{t('quickConnect')}
-    </button>
-  </div>
-
   {#if remotes.length}
     <h3>{t('connections')}</h3>
-    <ul>
+    <ul class="sessions">
       {#each remotes as s (s.id)}
         <li class="item">
           <span class="dot" aria-hidden="true"></span>
@@ -205,13 +223,21 @@
     </ul>
   {/if}
 
+  <section class="section profiles" class:closed={!profilesOpen}>
   <div class="head" class:drop={dropTarget === ''} {...dropProps('')}>
-    <h3>{t('savedProfiles')}</h3>
+    <h3>
+      <button type="button" class="toggle" aria-expanded={profilesOpen} onclick={() => toggleSection('profiles')}>
+        <span class="chevron" class:open={profilesOpen} aria-hidden="true">▸</span>{t('savedProfiles')}
+        <span class="count">{app.profiles.length}</span>
+      </button>
+    </h3>
     <button type="button" class="btn icon ghost" aria-label={t('newProfile')} title={t('newProfile')} onclick={onnewprofile}>
       <Icon name="plus" size={14} />
     </button>
   </div>
-  {#if app.profiles.length === 0}
+  {#if !profilesOpen}
+    <!-- collapsed: header only -->
+  {:else if app.profiles.length === 0}
     <p class="empty">{t('noProfiles')}</p>
   {:else}
     <div class="search">
@@ -231,6 +257,7 @@
         }}
       />
     </div>
+    <div class="scroll">
     {#if groups.length === 0}
       <p class="empty">{t('noProfileMatches')}</p>
     {/if}
@@ -321,18 +348,28 @@
       {/if}
       {/if}
     {/each}
+    </div>
   {/if}
+  </section>
 
+  <section class="section credentials" class:closed={!credentialsOpen}>
   <div class="head">
-    <h3>{t('credentials')}</h3>
+    <h3>
+      <button type="button" class="toggle" aria-expanded={credentialsOpen} onclick={() => toggleSection('credentials')}>
+        <span class="chevron" class:open={credentialsOpen} aria-hidden="true">▸</span>{t('credentials')}
+        <span class="count">{app.credentials.length}</span>
+      </button>
+    </h3>
     <button type="button" class="btn icon ghost" aria-label={t('newCredential')} title={t('newCredential')} onclick={onnewcredential}>
       <Icon name="plus" size={14} />
     </button>
   </div>
-  {#if app.credentials.length === 0}
+  {#if !credentialsOpen}
+    <!-- collapsed: header only -->
+  {:else if app.credentials.length === 0}
     <p class="empty">{t('noCredentials')}</p>
   {:else}
-    <ul aria-label={t('credentials')}>
+    <ul class="scroll" aria-label={t('credentials')}>
       {#each app.credentials as c (c.name)}
         <li class="item">
           <Icon name="key" size={14} />
@@ -350,6 +387,7 @@
       {/each}
     </ul>
   {/if}
+  </section>
 </aside>
 
 {#if menu}
@@ -385,15 +423,58 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 10px 8px;
-    overflow: auto;
+    padding: 2px 8px 10px;
+    overflow: hidden;
     min-height: 0;
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
-  .actions .btn {
-    width: 100%;
+  .sessions {
+    flex: none;
+    max-height: 30%;
+    overflow: auto;
+  }
+  /* Profiles and credentials each get a fixed share of the sidebar and scroll
+     on their own; a collapsed section shrinks to its header. */
+  .section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .section.profiles {
+    flex: 3 1 0;
+  }
+  .section.credentials {
+    flex: 2 1 0;
+  }
+  .section.closed {
+    flex: none;
+  }
+  .scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    margin: 0 -4px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+  }
+  .toggle:hover {
+    color: var(--fg-muted);
+    background: var(--bg-hover);
   }
   .head {
     display: flex;
