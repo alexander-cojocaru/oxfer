@@ -23,6 +23,8 @@ const en = {
   noProfileMatches: 'No profiles match.',
   preview: 'Preview',
   previewOf: 'Contents of {name}',
+  copyToClipboard: 'Copy to clipboard',
+  copiedToClipboard: 'Copied to clipboard.',
   openInEditor: 'Open in editor',
   previewBinary: 'This looks like a binary file, so there is no text preview. Use "Open in editor" or download it.',
   previewTruncated: 'Only the first {size} are shown.',
