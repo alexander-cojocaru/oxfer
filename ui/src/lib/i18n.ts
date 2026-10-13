@@ -158,6 +158,9 @@ const en = {
   error: 'Error',
   dismiss: 'Dismiss',
   sidebar: 'Toggle connections sidebar',
+  resizeSidebar: 'Resize sidebar (double-click to reset)',
+  resizePanes: 'Resize panes (double-click to reset)',
+  resizeQueue: 'Resize transfers (double-click to reset)',
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -15,6 +15,8 @@
   import { parentPath } from './lib/files';
   import { t } from './lib/i18n';
   import { isActive, totalSpeed } from './lib/transfers';
+  import { clamp, loadSize, QUEUE, saveSize, SIDEBAR, SPLIT } from './lib/layout';
+  import Splitter from './components/Splitter.svelte';
   import { LOCAL_SESSION, type Credential, type OverwritePolicy, type Profile, type SessionInfo } from './lib/types';
 
   type Side = 'left' | 'right';
@@ -31,6 +33,37 @@
     | null
   >(null);
   let panes = $state<Record<Side, FilePane | undefined>>({ left: undefined, right: undefined });
+
+  let sidebarW = $state(loadSize(SIDEBAR));
+  let split = $state(loadSize(SPLIT));
+  let queueH = $state(loadSize(QUEUE));
+  let appEl = $state<HTMLElement>();
+  let panesEl = $state<HTMLElement>();
+  let queueEl = $state<HTMLElement>();
+
+  function setSidebarW(v: number) {
+    sidebarW = Math.round(clamp(v, SIDEBAR.min, SIDEBAR.max));
+    saveSize(SIDEBAR.key, sidebarW);
+  }
+  function setSplit(v: number) {
+    split = Math.round(clamp(v, SPLIT.min, SPLIT.max) * 1000) / 1000;
+    saveSize(SPLIT.key, split);
+  }
+  function setQueueH(v: number) {
+    queueH = Math.round(clamp(v, QUEUE.min, QUEUE.max));
+    saveSize(QUEUE.key, queueH);
+  }
+  function dragSidebar(x: number) {
+    if (appEl) setSidebarW(x - appEl.getBoundingClientRect().left - 8);
+  }
+  function dragSplit(x: number) {
+    if (!panesEl) return;
+    const r = panesEl.getBoundingClientRect();
+    if (r.width > 0) setSplit((x - r.left) / r.width);
+  }
+  function dragQueue(y: number) {
+    if (queueEl) setQueueH(queueEl.getBoundingClientRect().bottom - y);
+  }
 
   const other = (s: Side): Side => (s === 'left' ? 'right' : 'left');
   const sessionFor = (side: Side): SessionInfo | null =>
@@ -192,7 +225,14 @@
 
 <svelte:window {onkeydown} />
 
-<div class="app" class:no-sidebar={!sidebarOpen} class:no-queue={!queueOpen}>
+<div
+  class="app"
+  class:no-sidebar={!sidebarOpen}
+  class:no-queue={!queueOpen}
+  bind:this={appEl}
+  style:--sidebar-w="{sidebarW}px"
+  style:--queue-h="{queueH}px"
+>
   <header class="toolbar">
     <button
       type="button"
@@ -239,10 +279,28 @@
       oneditcredential={(c) => (dialog = { mode: 'credential', credential: c })}
       ondisconnect={disconnect}
     />
+    <div class="vsplit">
+      <Splitter
+        orientation="vertical"
+        label={t('resizeSidebar')}
+        onmove={dragSidebar}
+        onstep={(d, big) => setSidebarW(sidebarW + d * (big ? 40 : 10))}
+        onreset={() => setSidebarW(SIDEBAR.def)}
+      />
+    </div>
   {/if}
 
-  <main class="panes">
+  <main class="panes" bind:this={panesEl} style:grid-template-columns="minmax(0, {split}fr) 8px minmax(0, {1 - split}fr)">
     {#each ['left', 'right'] as const as side (side)}
+      {#if side === 'right'}
+        <Splitter
+          orientation="vertical"
+          label={t('resizePanes')}
+          onmove={dragSplit}
+          onstep={(d, big) => setSplit(split + d * (big ? 0.1 : 0.02))}
+          onreset={() => setSplit(SPLIT.def)}
+        />
+      {/if}
       <FilePane
         bind:this={panes[side]}
         {side}
@@ -258,7 +316,16 @@
   </main>
 
   {#if queueOpen}
-    <section class="queue" aria-label={t('transfers')}>
+    <div class="hsplit">
+      <Splitter
+        orientation="horizontal"
+        label={t('resizeQueue')}
+        onmove={dragQueue}
+        onstep={(d, big) => setQueueH(queueH - d * (big ? 60 : 20))}
+        onreset={() => setQueueH(QUEUE.def)}
+      />
+    </div>
+    <section class="queue" aria-label={t('transfers')} bind:this={queueEl}>
       <div class="queue-head">
         <h2>{t('transfers')}</h2>
         <div class="spacer"></div>
@@ -308,14 +375,14 @@
   .app {
     height: 100%;
     display: grid;
-    grid-template-columns: 240px minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) minmax(120px, 30%) auto;
+    grid-template-columns: var(--sidebar-w, 240px) 8px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) 8px clamp(80px, var(--queue-h, 200px), 60%) auto;
     grid-template-areas:
-      'toolbar toolbar'
-      'sidebar panes'
-      'sidebar queue'
-      'status status';
-    gap: 8px;
+      'toolbar toolbar toolbar'
+      'sidebar vsplit panes'
+      'sidebar vsplit hsplit'
+      'sidebar vsplit queue'
+      'status status status';
     padding: 0 8px;
   }
   .app.no-sidebar {
@@ -323,25 +390,43 @@
     grid-template-areas:
       'toolbar'
       'panes'
+      'hsplit'
       'queue'
       'status';
   }
   .app.no-queue {
-    grid-template-rows: auto minmax(0, 1fr) 0 auto;
+    grid-template-rows: auto minmax(0, 1fr) 0 0 auto;
   }
   .app.no-queue:not(.no-sidebar) {
     grid-template-areas:
-      'toolbar toolbar'
-      'sidebar panes'
-      'sidebar panes'
-      'status status';
+      'toolbar toolbar toolbar'
+      'sidebar vsplit panes'
+      'sidebar vsplit panes'
+      'sidebar vsplit panes'
+      'status status status';
+  }
+  .app.no-queue.no-sidebar {
+    grid-template-areas:
+      'toolbar'
+      'panes'
+      'panes'
+      'panes'
+      'status';
+  }
+  .vsplit {
+    grid-area: vsplit;
+    display: grid;
+  }
+  .hsplit {
+    grid-area: hsplit;
+    display: grid;
   }
   .toolbar {
     grid-area: toolbar;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 0 0;
+    padding: 8px 0;
   }
   .brand {
     display: flex;
@@ -372,8 +457,6 @@
   .panes {
     grid-area: panes;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 8px;
     min-height: 0;
   }
   .queue {
@@ -405,7 +488,7 @@
     gap: 12px;
     font-size: 12px;
     color: var(--fg-muted);
-    padding: 2px 0 6px;
+    padding: 8px 0 6px;
   }
   .status {
     overflow: hidden;
@@ -423,9 +506,6 @@
     color: var(--fg);
   }
   @media (max-width: 1000px) {
-    .app:not(.no-sidebar) {
-      grid-template-columns: 200px minmax(0, 1fr);
-    }
     .hide-narrow {
       display: none;
     }
