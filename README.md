@@ -66,6 +66,12 @@ scripts/install-macos-app.sh ~/Applications  # or another folder
 
 Run it again after `git pull` to update; it quits a running oxfer first.
 
+The app is signed with a stable identity so macOS keeps keychain and folder
+permissions across updates: on first run the script creates a self-signed
+certificate "oxfer local signing" in your login keychain (set
+`OXFER_SIGN_IDENTITY` to use one of your own). Answer "Always Allow" to
+keychain prompts once and they stay answered.
+
 ## Performance
 
 Loopback comparison against OpenSSH `sftp` (Apple silicon, release build,
