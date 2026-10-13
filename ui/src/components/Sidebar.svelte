@@ -16,6 +16,7 @@
     onnewcredential,
     oneditcredential,
     ondisconnect,
+    onterminal,
   }: {
     connecting: string | null;
     onconnectprofile: (p: Profile) => void;
@@ -25,6 +26,7 @@
     onnewcredential: () => void;
     oneditcredential: (c: Credential) => void;
     ondisconnect: (s: SessionInfo) => void;
+    onterminal: (s: SessionInfo) => void;
   } = $props();
 
   let confirmDelete = $state<Profile | null>(null);
@@ -112,6 +114,11 @@
         <li class="item">
           <span class="dot" aria-hidden="true"></span>
           <span class="label" title={s.label}>{s.label}</span>
+          {#if s.protocol === 'sftp'}
+            <button type="button" class="btn icon ghost" aria-label="{t('openTerminal')} {s.label}" title={t('openTerminal')} onclick={() => onterminal(s)}>
+              <Icon name="terminal" size={14} />
+            </button>
+          {/if}
           <button type="button" class="btn icon ghost" aria-label="{t('disconnect')} {s.label}" title={t('disconnect')} onclick={() => ondisconnect(s)}>
             <Icon name="x" size={14} />
           </button>
