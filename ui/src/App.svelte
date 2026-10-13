@@ -264,8 +264,8 @@
     </button>
     <span class="brand"><span class="logo" aria-hidden="true"></span>oxfer</span>
     <div class="spacer"></div>
-    <button type="button" class="btn" onclick={() => (dialog = { mode: 'quick' })} title="{t('quickConnect')} (Ctrl+N)">
-      <Icon name="plug" />{t('connect')}
+    <button type="button" class="btn primary" onclick={() => (dialog = { mode: 'quick' })} title="{t('quickConnect')} (Ctrl+N)">
+      <Icon name="plug" />{t('quickConnect')}
     </button>
     <button
       type="button"
@@ -290,7 +290,6 @@
     <Sidebar
       {connecting}
       onconnectprofile={connectProfile}
-      onquickconnect={() => (dialog = { mode: 'quick' })}
       onnewprofile={() => (dialog = { mode: 'profile', profile: null })}
       oneditprofile={(p) => (dialog = { mode: 'profile', profile: p })}
       onnewcredential={() => (dialog = { mode: 'credential', credential: null })}
