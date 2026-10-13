@@ -16,6 +16,7 @@ const en = {
   newProfile: 'New profile',
   editProfile: 'Edit profile',
   moveProfile: 'Move to group',
+  profileMenuHint: 'Right-click for more options',
   deleteProfile: 'Delete profile',
   deleteProfileConfirm: 'Delete the profile "{name}"? Its stored password is removed from the keychain.',
   profileName: 'Profile name',

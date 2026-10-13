@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import ContextMenu, { type MenuEntry } from './ContextMenu.svelte';
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n';
@@ -17,6 +18,7 @@
     oneditcredential,
     ondisconnect,
     onterminal,
+    onprofileterminal,
   }: {
     connecting: string | null;
     onconnectprofile: (p: Profile) => void;
@@ -27,6 +29,7 @@
     oneditcredential: (c: Credential) => void;
     ondisconnect: (s: SessionInfo) => void;
     onterminal: (s: SessionInfo) => void;
+    onprofileterminal: (p: Profile) => void;
   } = $props();
 
   let confirmDelete = $state<Profile | null>(null);
@@ -105,6 +108,8 @@
   let dropTarget = $state<string | null>(null);
   const allGroups = $derived(groupNames(app.profiles));
 
+  const focusOnMount = (el: HTMLElement) => el.focus();
+
   async function moveTo(name: string, group: string | null) {
     moving = null;
     dragged = null;
@@ -139,10 +144,37 @@
     return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : 'FTPS';
   }
 
+  // Left click connects; everything else lives in the right-click menu.
+  let menu = $state<{ x: number; y: number; items: MenuEntry[] } | null>(null);
+
+  function openProfileMenu(e: MouseEvent, p: Profile) {
+    e.preventDefault();
+    // Opened from the keyboard (menu key, Shift+F10) there is no pointer position.
+    let { clientX: x, clientY: y } = e;
+    if (x === 0 && y === 0) {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      x = r.left + 24;
+      y = r.bottom;
+    }
+    const busy = connecting !== null;
+    const items: MenuEntry[] = [{ label: t('connect'), action: () => onconnectprofile(p), disabled: busy }];
+    if (p.protocol === 'sftp') {
+      items.push({ label: t('openTerminal'), action: () => onprofileterminal(p), disabled: busy });
+    }
+    items.push(
+      'separator',
+      { label: `${t('moveProfile')}…`, action: () => (moving = p.name) },
+      { label: `${t('editProfile')}…`, action: () => oneditprofile(p) },
+      'separator',
+      { label: `${t('deleteProfile')}…`, action: () => (confirmDelete = p), danger: true },
+    );
+    menu = { x, y, items };
+  }
+
   // Tooltip for the (possibly ellipsized) profile row: full name plus target.
   function profileTitle(p: Profile) {
     const user = p.user && !p.credential ? `${p.user}@` : '';
-    return `${p.name}\n${protoLabel(p.protocol)} · ${user}${p.host}`;
+    return `${p.name}\n${protoLabel(p.protocol)} · ${user}${p.host}\n${t('profileMenuHint')}`;
   }
 </script>
 
@@ -241,6 +273,7 @@
                 dragged = null;
                 dropTarget = null;
               }}
+              oncontextmenu={(e) => openProfileMenu(e, p)}
             >
               <button
                 type="button"
@@ -260,28 +293,14 @@
                 </span>
                 {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
               </button>
-              <button
-                type="button"
-                class="btn icon ghost"
-                aria-label="{t('moveProfile')} {p.name}"
-                aria-expanded={moving === p.name}
-                title={t('moveProfile')}
-                onclick={() => (moving = moving === p.name ? null : p.name)}
-              >
-                <Icon name="folder" size={14} />
-              </button>
-              <button type="button" class="btn icon ghost" aria-label="{t('editProfile')} {p.name}" title={t('editProfile')} onclick={() => oneditprofile(p)}>
-                <Icon name="edit" size={14} />
-              </button>
-              <button type="button" class="btn icon ghost" aria-label="{t('deleteProfile')} {p.name}" title={t('deleteProfile')} onclick={() => (confirmDelete = p)}>
-                <Icon name="trash" size={14} />
-              </button>
             </li>
             {#if moving === p.name}
               <li class="move">
                 <select
                   aria-label="{t('moveProfile')} {p.name}"
                   value={p.group ?? ''}
+                  use:focusOnMount
+                  onblur={() => (moving = null)}
                   onchange={(e) => moveTo(p.name, e.currentTarget.value || null)}
                   onkeydown={(e) => {
                     if (e.key === 'Escape') {
@@ -332,6 +351,10 @@
     </ul>
   {/if}
 </aside>
+
+{#if menu}
+  <ContextMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />
+{/if}
 
 {#if confirmDeleteCredential}
   {@const c = confirmDeleteCredential}
