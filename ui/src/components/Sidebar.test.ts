@@ -35,7 +35,6 @@ function renderSidebar() {
     props: {
       connecting: null,
       onconnectprofile,
-      onquickconnect: vi.fn(),
       onnewprofile: vi.fn(),
       oneditprofile,
       onnewcredential: vi.fn(),
@@ -110,6 +109,30 @@ describe('Sidebar profiles', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(api.deleteCredential).toHaveBeenCalledWith('deploy');
     expect(app.toasts.at(-1)?.message).toMatch(/used by web/);
+  });
+});
+
+describe('Sidebar sections', () => {
+  it('collapses profiles and credentials independently and remembers it', async () => {
+    const user = userEvent.setup();
+    app.credentials = [{ name: 'deploy', user: 'ci', auth: { method: 'password' } }];
+    renderSidebar();
+    const profiles = screen.getByRole('button', { name: /^Saved profiles/ });
+    const credentials = screen.getByRole('button', { name: /^Credentials/ });
+    expect(profiles).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(profiles);
+    expect(profiles).toHaveAttribute('aria-expanded', 'false');
+    expect(connectButtons()).toEqual([]);
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    expect(screen.getByRole('list', { name: 'Credentials' })).toBeInTheDocument();
+
+    await user.click(credentials);
+    expect(screen.queryByRole('list', { name: 'Credentials' })).toBeNull();
+    expect(JSON.parse(localStorage.getItem('oxfer.collapsedSections')!)).toEqual(['profiles', 'credentials']);
+
+    await user.click(profiles);
+    expect(connectButtons()).toContain('Connect nas');
   });
 });
 
