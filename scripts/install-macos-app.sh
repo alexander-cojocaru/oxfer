@@ -54,6 +54,34 @@ cargo tauri build --bundles app
 app="$root/target/release/bundle/macos/oxfer.app"
 [[ -d "$app" ]] || { echo "build did not produce $app" >&2; exit 1; }
 
+# macOS remembers keychain "Always Allow" and folder access per code signature.
+# The default ad-hoc signature changes with every build, so each reinstall
+# would ask for everything again. Sign with a stable identity instead: the one
+# in $OXFER_SIGN_IDENTITY, or a self-signed certificate created once in the
+# login keychain.
+identity="${OXFER_SIGN_IDENTITY:-oxfer local signing}"
+if ! security find-identity -p codesigning | grep -qF "\"$identity\""; then
+    if [[ -n "${OXFER_SIGN_IDENTITY:-}" ]]; then
+        echo "signing identity \"$identity\" not found in the keychain" >&2
+        exit 1
+    fi
+    echo "==> creating the self-signed certificate \"$identity\" in the login keychain"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    pass="$(/usr/bin/openssl rand -hex 16)"
+    /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+        -subj "/CN=$identity" \
+        -addext "basicConstraints=critical,CA:false" \
+        -addext "keyUsage=critical,digitalSignature" \
+        -addext "extendedKeyUsage=critical,codeSigning" \
+        -keyout "$tmp/key.pem" -out "$tmp/cert.pem" 2>/dev/null
+    /usr/bin/openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+        -name "$identity" -passout "pass:$pass" -out "$tmp/cert.p12"
+    security import "$tmp/cert.p12" -P "$pass" -T /usr/bin/codesign >/dev/null
+fi
+echo "==> signing oxfer.app as \"$identity\""
+codesign --force --deep --identifier dev.oxfer.app --sign "$identity" "$app"
+
 if [[ $install == 0 ]]; then
     echo "built $app"
     exit 0
