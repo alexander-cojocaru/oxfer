@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PreviewDialog from './PreviewDialog.svelte';
 import { api } from '../lib/api';
@@ -32,5 +32,21 @@ describe('PreviewDialog', () => {
     vi.mocked(api.readPreview).mockRejectedValue({ code: 'permissionDenied', message: 'permission denied: /srv/a.bin' });
     render(PreviewDialog, { props: props() });
     expect(await screen.findByRole('alert')).toHaveTextContent('permission denied');
+  });
+
+  it('copies the text to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.mocked(api.readPreview).mockResolvedValue({ content: 'hello\nworld', binary: false, truncated: false, size: 11 });
+    render(PreviewDialog, { props: props() });
+    await fireEvent.click(await screen.findByRole('button', { name: 'Copy to clipboard' }));
+    expect(writeText).toHaveBeenCalledWith('hello\nworld');
+  });
+
+  it('offers no copy button for binary files', async () => {
+    vi.mocked(api.readPreview).mockResolvedValue({ content: null, binary: true, truncated: false, size: 4096 });
+    render(PreviewDialog, { props: props() });
+    await screen.findByText(/binary file/);
+    expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).toBeNull();
   });
 });
