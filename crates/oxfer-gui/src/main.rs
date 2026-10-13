@@ -39,8 +39,9 @@ async fn connect(state: State<'_, AppState>, request: ConnectRequest) -> CmdResu
     state.svc.connect(request, state.prompter()).await
 }
 
+// Async so it runs on the Tokio runtime: closing the session's terminals spawns tasks.
 #[tauri::command]
-fn disconnect(state: State<'_, AppState>, session: String) -> CmdResult<()> {
+async fn disconnect(state: State<'_, AppState>, session: String) -> CmdResult<()> {
     state.svc.disconnect(&session)
 }
 
@@ -208,8 +209,10 @@ async fn terminal_resize(
     state.svc.terminal_resize(id, cols, rows).await
 }
 
+// Async so it runs on the Tokio runtime; sync commands run on the main thread,
+// where `tokio::spawn` panics and aborts the app.
 #[tauri::command]
-fn close_terminal(state: State<'_, AppState>, id: u64) -> CmdResult<()> {
+async fn close_terminal(state: State<'_, AppState>, id: u64) -> CmdResult<()> {
     state.svc.close_terminal(id)
 }
 
