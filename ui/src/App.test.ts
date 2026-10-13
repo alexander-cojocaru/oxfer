@@ -60,6 +60,21 @@ describe('App (smoke)', () => {
     });
   });
 
+  it('mouse back/forward buttons walk the folder history of the pane', async () => {
+    render(App);
+    await waitFor(() => expect(screen.getAllByText('docs')).toHaveLength(2));
+    const pane = screen.getAllByRole('grid')[0];
+    const shown = () => screen.getAllByLabelText(/^Local \//)[0].getAttribute('aria-label');
+
+    await fireEvent.dblClick(screen.getAllByText('docs')[0]);
+    await waitFor(() => expect(shown()).toBe('Local /home/u/docs'));
+
+    await fireEvent.mouseUp(pane, { button: 3 });
+    await waitFor(() => expect(shown()).toBe('Local /home/u'));
+    await fireEvent.mouseUp(pane, { button: 4 });
+    await waitFor(() => expect(shown()).toBe('Local /home/u/docs'));
+  });
+
   it('shows host key prompts from the backend', async () => {
     render(App);
     await waitFor(() => expect(promptCb).toBeDefined());
