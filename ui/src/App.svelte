@@ -507,11 +507,13 @@
     background: none;
     border: none;
     color: inherit;
-    padding: 2px 4px;
+    padding: 2px 6px;
     border-radius: 4px;
+    font-variant-numeric: tabular-nums;
   }
   .link:hover {
     color: var(--fg);
+    background: var(--bg-hover);
   }
   @media (max-width: 1000px) {
     .hide-narrow {

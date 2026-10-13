@@ -510,6 +510,7 @@
   }
   .pane.active {
     border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
   }
   .top,
   .tools {
@@ -561,5 +562,6 @@
     padding: 4px 10px;
     font-size: 12px;
     color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
   }
 </style>
