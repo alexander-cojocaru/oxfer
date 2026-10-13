@@ -263,7 +263,10 @@
       {/each}
     </div>
     {#if !loading && entries.length === 0}
-      <p class="empty">{emptyText}</p>
+      <div class="empty">
+        <Icon name="folder" size={28} />
+        <p>{emptyText}</p>
+      </div>
     {/if}
   </div>
 </div>
@@ -305,11 +308,16 @@
   .col.size button {
     justify-content: flex-end;
   }
-  .col button:hover {
+  .col button:hover,
+  .col button:focus-visible {
     color: var(--fg);
+  }
+  .col button:focus-visible {
+    outline-offset: -2px;
   }
   .arrow {
     font-size: 8px;
+    color: var(--accent);
   }
   .viewport {
     position: relative;
@@ -337,7 +345,7 @@
     cursor: default;
     border-radius: 4px;
   }
-  .row:hover {
+  .row:hover:not(.selected) {
     background: var(--bg-hover);
   }
   .row.selected {
@@ -387,8 +395,13 @@
   .empty {
     position: absolute;
     inset: 40px 0 auto;
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     color: var(--fg-faint);
+  }
+  .empty p {
     margin: 0;
   }
   @media (max-width: 1000px) {
