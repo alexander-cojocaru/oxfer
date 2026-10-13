@@ -77,6 +77,9 @@
 
   let loadSeq = 0;
   let lastSession: string | null = null;
+  // visited directories of this pane's session, for the mouse back/forward buttons
+  let history: string[] = [];
+  let historyIndex = -1;
 
   $effect(() => {
     // (re)open the home directory whenever the pane switches session
@@ -85,10 +88,14 @@
       raw = [];
       path = '';
       lastSession = null;
+      history = [];
+      historyIndex = -1;
       return;
     }
     if (s.id !== lastSession) {
       lastSession = s.id;
+      history = [];
+      historyIndex = -1;
       void navigate(s.home);
     }
   });
@@ -99,7 +106,7 @@
     if (pruned.selected.size !== selection.selected.size || pruned.focus !== selection.focus) selection = pruned;
   });
 
-  export async function navigate(target: string, focusPath?: string) {
+  export async function navigate(target: string, focusPath?: string, record = true) {
     if (!session) return;
     const id = session.id;
     const seq = ++loadSeq;
@@ -111,6 +118,10 @@
       const changed = target !== path;
       raw = list;
       path = target;
+      if (changed && record) {
+        history = [...history.slice(0, historyIndex + 1), target];
+        historyIndex = history.length - 1;
+      }
       if (changed) {
         selection = focusPath ? { selected: new Set([focusPath]), anchor: focusPath, focus: focusPath } : emptySelection;
         if (!focusPath) filter = '';
@@ -155,6 +166,28 @@
   export function goUp() {
     const p = parentPath(path);
     if (p) void navigate(p, path);
+  }
+
+  export function goBack() {
+    if (historyIndex <= 0) return;
+    const target = history[historyIndex - 1];
+    historyIndex--;
+    void navigate(target, undefined, false);
+  }
+
+  export function goForward() {
+    if (historyIndex >= history.length - 1) return;
+    const target = history[historyIndex + 1];
+    historyIndex++;
+    void navigate(target, undefined, false);
+  }
+
+  function onmouseup(ev: MouseEvent) {
+    // mouse side buttons: 3 = back, 4 = forward
+    if (ev.button === 3) goBack();
+    else if (ev.button === 4) goForward();
+    else return;
+    ev.preventDefault();
   }
 
   function open(e: Entry) {
@@ -342,6 +375,7 @@
   bind:this={paneEl}
   onfocusin={onactivate}
   onmousedown={onactivate}
+  {onmouseup}
 >
   <div class="top">
     <label class="sr-only" for="session-{side}">{t('session')}</label>
