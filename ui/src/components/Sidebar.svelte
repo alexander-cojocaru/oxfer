@@ -4,7 +4,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n';
-  import { groupProfiles, parentGroups } from '../lib/profiles';
+  import { groupNames, groupProfiles, parentGroups } from '../lib/profiles';
   import type { Credential, Profile, SessionInfo } from '../lib/types';
 
   let {
@@ -97,6 +97,42 @@
     }
   }
 
+  // Moving only changes the group; the name stays, so a stored password is kept.
+  let moving = $state<string | null>(null);
+  let dragged = $state<string | null>(null);
+  let dropTarget = $state<string | null>(null);
+  const allGroups = $derived(groupNames(app.profiles));
+
+  async function moveTo(name: string, group: string | null) {
+    moving = null;
+    dragged = null;
+    dropTarget = null;
+    const p = app.profiles.find((x) => x.name === name);
+    if (!p || (p.group ?? null) === group) return;
+    try {
+      await api.saveProfile(p.name, { ...p, group }, null);
+      await app.loadProfiles();
+    } catch (e) {
+      app.error(e);
+    }
+  }
+
+  // `target` is a group path, or `''` for the ungrouped list.
+  const dropProps = (target: string) => ({
+    ondragover: (e: DragEvent) => {
+      if (dragged === null) return;
+      e.preventDefault();
+      dropTarget = target;
+    },
+    ondragleave: () => {
+      if (dropTarget === target) dropTarget = null;
+    },
+    ondrop: (e: DragEvent) => {
+      e.preventDefault();
+      if (dragged !== null) void moveTo(dragged, target || null);
+    },
+  });
+
   function protoLabel(p: Profile['protocol']) {
     return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : 'FTPS';
   }
@@ -124,7 +160,7 @@
     </ul>
   {/if}
 
-  <div class="head">
+  <div class="head" class:drop={dropTarget === ''} {...dropProps('')}>
     <h3>{t('savedProfiles')}</h3>
     <button type="button" class="btn icon ghost" aria-label={t('newProfile')} title={t('newProfile')} onclick={onnewprofile}>
       <Icon name="plus" size={14} />
@@ -160,6 +196,8 @@
         <button
           type="button"
           class="group"
+          class:drop={dropTarget === g.name}
+          {...dropProps(g.name)}
           style:padding-left="{6 + indent(g.depth)}px"
           aria-expanded={open}
           onclick={() => toggleGroup(g.name!)}
@@ -177,7 +215,20 @@
           aria-label={g.name ?? t('savedProfiles')}
         >
           {#each g.profiles as p (p.name)}
-            <li class="item profile">
+            <li
+              class="item profile"
+              class:dragging={dragged === p.name}
+              draggable="true"
+              ondragstart={(e) => {
+                dragged = p.name;
+                e.dataTransfer?.setData('text/plain', p.name);
+                if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+              }}
+              ondragend={() => {
+                dragged = null;
+                dropTarget = null;
+              }}
+            >
               <button
                 type="button"
                 class="connect"
@@ -195,6 +246,16 @@
                 </span>
                 {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
               </button>
+              <button
+                type="button"
+                class="btn icon ghost"
+                aria-label="{t('moveProfile')} {p.name}"
+                aria-expanded={moving === p.name}
+                title={t('moveProfile')}
+                onclick={() => (moving = moving === p.name ? null : p.name)}
+              >
+                <Icon name="folder" size={14} />
+              </button>
               <button type="button" class="btn icon ghost" aria-label="{t('editProfile')} {p.name}" title={t('editProfile')} onclick={() => oneditprofile(p)}>
                 <Icon name="edit" size={14} />
               </button>
@@ -202,6 +263,26 @@
                 <Icon name="trash" size={14} />
               </button>
             </li>
+            {#if moving === p.name}
+              <li class="move">
+                <select
+                  aria-label="{t('moveProfile')} {p.name}"
+                  value={p.group ?? ''}
+                  onchange={(e) => moveTo(p.name, e.currentTarget.value || null)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      moving = null;
+                    }
+                  }}
+                >
+                  <option value="">{t('noGroup')}</option>
+                  {#each allGroups as name (name)}
+                    <option value={name}>{name}</option>
+                  {/each}
+                </select>
+              </li>
+            {/if}
           {/each}
         </ul>
       {/if}
@@ -413,6 +494,20 @@
   .count {
     font-size: 11px;
     color: var(--fg-faint);
+  }
+  .drop {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+  }
+  .dragging {
+    opacity: 0.5;
+  }
+  .move {
+    list-style: none;
+    padding: 0 4px 4px 22px;
+  }
+  .move select {
+    width: 100%;
   }
   ul.nested {
     padding-left: 14px;
