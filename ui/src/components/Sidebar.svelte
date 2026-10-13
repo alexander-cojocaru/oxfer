@@ -96,6 +96,12 @@
   function protoLabel(p: Profile['protocol']) {
     return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : 'FTPS';
   }
+
+  // Tooltip for the (possibly ellipsized) profile row: full name plus target.
+  function profileTitle(p: Profile) {
+    const user = p.user && !p.credential ? `${p.user}@` : '';
+    return `${p.name}\n${protoLabel(p.protocol)} · ${user}${p.host}`;
+  }
 </script>
 
 <aside aria-label={t('connections')}>
@@ -173,6 +179,7 @@
                 class="connect"
                 disabled={connecting !== null}
                 aria-label="{t('connect')} {p.name}"
+                title={profileTitle(p)}
                 onclick={() => onconnectprofile(p)}
               >
                 <Icon name="server" size={14} />
@@ -211,7 +218,7 @@
       {#each app.credentials as c (c.name)}
         <li class="item">
           <Icon name="key" size={14} />
-          <span class="label">
+          <span class="label" title={c.name}>
             <span class="name">{c.name}</span>
             <span class="sub">{c.user ? `${c.user} · ` : ''}{authLabel(c.auth)}</span>
           </span>
