@@ -133,6 +133,21 @@
     }
   }
 
+  // Connects first (or reuses the open session for that server), then opens a shell.
+  async function profileTerminal(p: Profile) {
+    if (connecting) return;
+    connecting = p.name;
+    try {
+      const s = await api.connect({ kind: 'profile', name: p.name });
+      onconnected(s);
+      terminal = s;
+    } catch (e) {
+      app.error(e);
+    } finally {
+      connecting = null;
+    }
+  }
+
   async function disconnect(s: SessionInfo) {
     try {
       await api.disconnect(s.id);
@@ -282,6 +297,7 @@
       oneditcredential={(c) => (dialog = { mode: 'credential', credential: c })}
       ondisconnect={disconnect}
       onterminal={(s) => (terminal = s)}
+      onprofileterminal={profileTerminal}
     />
     <div class="vsplit">
       <Splitter
