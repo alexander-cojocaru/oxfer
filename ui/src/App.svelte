@@ -6,6 +6,7 @@
   import Icon from './components/Icon.svelte';
   import PromptDialog from './components/PromptDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import TerminalDialog from './components/TerminalDialog.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferQueue from './components/TransferQueue.svelte';
   import { api } from './lib/api';
@@ -30,6 +31,7 @@
     | { mode: 'credential'; credential: Credential | null }
     | null
   >(null);
+  let terminal = $state<SessionInfo | null>(null);
   let panes = $state<Record<Side, FilePane | undefined>>({ left: undefined, right: undefined });
 
   const other = (s: Side): Side => (s === 'left' ? 'right' : 'left');
@@ -105,6 +107,7 @@
       app.error(e);
     }
     app.sessions = app.sessions.filter((x) => x.id !== s.id);
+    if (terminal?.id === s.id) terminal = null;
     for (const side of ['left', 'right'] as const) {
       if (sessionIds[side] === s.id) sessionIds = { ...sessionIds, [side]: LOCAL_SESSION };
     }
@@ -238,6 +241,7 @@
       onnewcredential={() => (dialog = { mode: 'credential', credential: null })}
       oneditcredential={(c) => (dialog = { mode: 'credential', credential: c })}
       ondisconnect={disconnect}
+      onterminal={(s) => (terminal = s)}
     />
   {/if}
 
@@ -294,6 +298,10 @@
   />
 {:else if dialog?.mode === 'credential'}
   <CredentialDialog credential={dialog.credential} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
+{/if}
+
+{#if terminal}
+  <TerminalDialog session={terminal} onclose={() => (terminal = null)} />
 {/if}
 
 {#if prompt}

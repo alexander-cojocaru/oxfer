@@ -2,27 +2,35 @@ use std::io::SeekFrom;
 use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use oxfer_core::{BoxRead, BoxWrite, Entry, EntryKind, Error, RemoteFs, RemotePath, Result};
+use oxfer_core::{BoxRead, BoxWrite, Entry, EntryKind, Error, RemoteFs, RemotePath, Result, Shell};
+use russh::client::Handle;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::Metadata;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileType, OpenFlags, StatusCode};
 use tokio::io::AsyncSeekExt;
 
+use crate::client::Handler;
+use crate::shell;
+
 pub struct SftpFs {
     sftp: SftpSession,
-    // Keeps the SSH connection alive for as long as the SFTP session is used.
-    _sessions: Box<dyn std::any::Any + Send + Sync>,
+    /// The SSH connection; also used to open terminal channels.
+    ssh: Handle<Handler>,
+    // Keeps the jump hosts' connections alive.
+    _hops: Box<dyn std::any::Any + Send + Sync>,
 }
 
 impl SftpFs {
     pub(crate) fn new(
         sftp: SftpSession,
-        sessions: Vec<Box<dyn std::any::Any + Send + Sync>>,
+        ssh: Handle<Handler>,
+        hops: Vec<Box<dyn std::any::Any + Send + Sync>>,
     ) -> Self {
         Self {
             sftp,
-            _sessions: Box::new(sessions),
+            ssh,
+            _hops: Box::new(hops),
         }
     }
 }
@@ -148,5 +156,9 @@ impl RemoteFs for SftpFs {
             .rename(from.as_str(), to.as_str())
             .await
             .map_err(|e| map_err(e, from))
+    }
+
+    async fn open_shell(&self, cols: u32, rows: u32) -> Result<Shell> {
+        shell::open(&self.ssh, cols, rows).await
     }
 }
