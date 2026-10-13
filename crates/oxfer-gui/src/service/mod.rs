@@ -9,6 +9,7 @@ mod error;
 mod manager;
 mod profiles;
 mod prompt;
+mod terminal;
 mod transfers;
 
 pub use connect::{ConnectEnv, ConnectRequest, QuickAuth, QuickConnect};
@@ -21,6 +22,7 @@ pub use prompt::{
     ConflictChoice, HostKeyChoice, Prompt, PromptAnswer, PromptBroker, PromptEvent, Prompter,
     ScriptedPrompter, SecretKind, SecretString,
 };
+pub use terminal::{TerminalEvent, TerminalSink};
 pub use transfers::{
     EventSink, OverwriteDto, SkippedDto, TransferEvent, TransferOptionsDto, TransferRequest,
     PROGRESS_INTERVAL,

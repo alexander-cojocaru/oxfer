@@ -14,6 +14,7 @@ import type {
   ServiceError,
   SessionId,
   SessionInfo,
+  TerminalEvent,
   TransferEvent,
   TransferRequest,
 } from './types';
@@ -51,10 +52,19 @@ export const api = {
     invoke<Credential>('save_credential', { original, credential, password }),
   deleteCredential: (name: string) => invoke<void>('delete_credential', { name }),
 
+  openTerminal: (session: SessionId, cols: number, rows: number) =>
+    invoke<number>('open_terminal', { session, cols, rows }),
+  terminalWrite: (id: number, data: number[]) => invoke<void>('terminal_write', { id, data }),
+  terminalResize: (id: number, cols: number, rows: number) =>
+    invoke<void>('terminal_resize', { id, cols, rows }),
+  closeTerminal: (id: number) => invoke<void>('close_terminal', { id }),
+
   answerPrompt: (id: number, answer: PromptAnswer) => invoke<void>('answer_prompt', { id, answer }),
 
   onTransferEvent: (cb: (e: TransferEvent) => void): Promise<UnlistenFn> =>
     listen<TransferEvent>('transfer-event', (e) => cb(e.payload)),
+  onTerminalEvent: (cb: (e: TerminalEvent) => void): Promise<UnlistenFn> =>
+    listen<TerminalEvent>('terminal-event', (e) => cb(e.payload)),
   onPrompt: (cb: (e: PromptEvent) => void): Promise<UnlistenFn> =>
     listen<PromptEvent>('prompt', (e) => cb(e.payload)),
 };

@@ -1,10 +1,31 @@
 use async_trait::async_trait;
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::sync::Arc;
 
-use crate::{Entry, RemotePath, Result};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::mpsc;
+
+use crate::{Entry, Error, RemotePath, Result};
 
 pub type BoxRead = Box<dyn AsyncRead + Send + Unpin>;
 pub type BoxWrite = Box<dyn AsyncWrite + Send + Unpin>;
+
+/// Input side of an interactive remote shell.
+#[async_trait]
+pub trait ShellControl: Send + Sync {
+    /// Send keystrokes to the remote terminal.
+    async fn write(&self, data: &[u8]) -> Result<()>;
+    /// Tell the remote terminal its new size in character cells.
+    async fn resize(&self, cols: u32, rows: u32) -> Result<()>;
+    /// End the shell.
+    async fn close(&self) -> Result<()>;
+}
+
+/// An interactive remote shell on a pseudo-terminal.
+pub struct Shell {
+    /// Terminal output; closed when the shell has ended.
+    pub output: mpsc::Receiver<Vec<u8>>,
+    pub control: Arc<dyn ShellControl>,
+}
 
 /// A connected remote file system. Implemented by each protocol backend.
 #[async_trait]
@@ -28,4 +49,8 @@ pub trait RemoteFs: Send + Sync {
     /// Remove a file or an empty directory.
     async fn remove(&self, path: &RemotePath) -> Result<()>;
     async fn rename(&self, from: &RemotePath, to: &RemotePath) -> Result<()>;
+    /// Start an interactive shell of `cols` x `rows` characters on the server.
+    async fn open_shell(&self, _cols: u32, _rows: u32) -> Result<Shell> {
+        Err(Error::Unsupported("remote shell"))
+    }
 }

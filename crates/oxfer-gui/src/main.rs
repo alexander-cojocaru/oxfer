@@ -9,7 +9,7 @@ use oxfer_config::{Config, KeyringStore};
 use oxfer_gui::service::{
     ConnectEnv, ConnectRequest, CredentialDto, EntryDto, EventSink, FilePreview, ProfileDto,
     ProfileStore, PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError,
-    SessionInfo, SessionManager, TransferEvent, TransferRequest,
+    SessionInfo, SessionManager, TerminalEvent, TerminalSink, TransferEvent, TransferRequest,
 };
 use tauri::{Emitter, Manager, State};
 use tracing_subscriber::EnvFilter;
@@ -19,6 +19,7 @@ type CmdResult<T> = Result<T, ServiceError>;
 struct AppState {
     svc: Arc<SessionManager>,
     broker: Arc<PromptBroker>,
+    terminals: Arc<dyn TerminalSink>,
 }
 
 impl AppState {
@@ -180,6 +181,39 @@ fn delete_credential(state: State<'_, AppState>, name: String) -> CmdResult<()> 
 }
 
 #[tauri::command]
+async fn open_terminal(
+    state: State<'_, AppState>,
+    session: String,
+    cols: u32,
+    rows: u32,
+) -> CmdResult<u64> {
+    state
+        .svc
+        .open_terminal(&session, cols, rows, state.terminals.clone())
+        .await
+}
+
+#[tauri::command]
+async fn terminal_write(state: State<'_, AppState>, id: u64, data: Vec<u8>) -> CmdResult<()> {
+    state.svc.terminal_write(id, &data).await
+}
+
+#[tauri::command]
+async fn terminal_resize(
+    state: State<'_, AppState>,
+    id: u64,
+    cols: u32,
+    rows: u32,
+) -> CmdResult<()> {
+    state.svc.terminal_resize(id, cols, rows).await
+}
+
+#[tauri::command]
+fn close_terminal(state: State<'_, AppState>, id: u64) -> CmdResult<()> {
+    state.svc.close_terminal(id)
+}
+
+#[tauri::command]
 fn answer_prompt(state: State<'_, AppState>, id: u64, answer: PromptAnswer) -> CmdResult<()> {
     state.broker.answer(id, answer)
 }
@@ -200,6 +234,12 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             tracing::warn!("cannot emit transfer event: {e}");
         }
     });
+    let terminal_events = app.handle().clone();
+    let terminals: Arc<dyn TerminalSink> = Arc::new(move |ev: TerminalEvent| {
+        if let Err(e) = terminal_events.emit("terminal-event", &ev) {
+            tracing::warn!("cannot emit terminal event: {e}");
+        }
+    });
     let prompts = app.handle().clone();
     let broker = PromptBroker::new(move |ev: PromptEvent| {
         if let Err(e) = prompts.emit("prompt", &ev) {
@@ -214,6 +254,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(AppState {
         svc: SessionManager::new(profiles, env, sink),
         broker,
+        terminals,
     });
     Ok(())
 }
@@ -247,6 +288,10 @@ fn main() {
             list_credentials,
             save_credential,
             delete_credential,
+            open_terminal,
+            terminal_write,
+            terminal_resize,
+            close_terminal,
             answer_prompt,
         ])
         .run(tauri::generate_context!());
