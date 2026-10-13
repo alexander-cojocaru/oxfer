@@ -118,6 +118,12 @@ fn recursive_roundtrip_ls_mv_rm() {
     assert!(work.join("moved/a.txt").exists() && !work.join("tree").exists());
     ok(&e.run(&["mkdir", &e.host(&work.join("newdir"))]));
     assert!(work.join("newdir").is_dir());
+    // -p creates missing parents and tolerates an existing directory
+    let deep = e.host(&work.join("p/q/r"));
+    ok(&e.run(&["mkdir", "-p", &deep]));
+    ok(&e.run(&["mkdir", "-p", &deep]));
+    assert!(work.join("p/q/r").is_dir());
+    assert!(!e.run(&["mkdir", &deep]).status.success());
     ok(&e.run(&["rm", "-r", &e.host(&work.join("moved"))]));
     assert!(!work.join("moved").exists());
 }

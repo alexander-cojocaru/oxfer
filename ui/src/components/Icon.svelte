@@ -27,6 +27,7 @@
     key: 'M15 7a3 3 0 1 1-3 3M3 21l7.5-7.5M7 17l2 2M12 10a5 5 0 1 0 5-5',
     warning: 'M12 3 2 21h20zM12 10v5m0 3h.01',
     check: 'M5 12l5 5L20 7',
+    terminal: 'M4 5h16v14H4zM7 10l3 2-3 2M12 15h5',
     search: 'M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14zm10 3-5-5',
   } as const;
   export type IconName = keyof typeof paths;

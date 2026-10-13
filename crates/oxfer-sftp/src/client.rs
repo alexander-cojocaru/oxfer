@@ -81,7 +81,7 @@ impl ConnectOptions {
     }
 }
 
-struct Handler {
+pub(crate) struct Handler {
     host: String,
     port: u16,
     verifier: HostKeyVerifier,
@@ -89,7 +89,7 @@ struct Handler {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum HandlerError {
+pub(crate) enum HandlerError {
     #[error(transparent)]
     Ssh(#[from] russh::Error),
     #[error("{0}")]
@@ -260,8 +260,7 @@ impl SftpFs {
         let sftp = SftpSession::new_with_config(channel.into_stream(), sftp_config())
             .await
             .map_err(|e| Error::Protocol(e.to_string()))?;
-        keep.push(Box::new(session));
-        Ok(SftpFs::new(sftp, keep))
+        Ok(SftpFs::new(sftp, session, keep))
     }
 }
 
