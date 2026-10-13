@@ -10,8 +10,8 @@ use oxfer_core::LocalFs;
 use oxfer_gui::service::{
     AuthDto, ConflictChoice, ConnectEnv, ConnectRequest, CredentialDto, EntryKindDto, EventSink,
     HostKeyChoice, OverwriteDto, ProfileDto, ProfileStore, Prompt, PromptAnswer, ProtocolDto,
-    QuickAuth, QuickConnect, ScriptedPrompter, SecretKind, SessionManager, TransferEvent,
-    TransferOptionsDto, TransferRequest, LOCAL_SESSION,
+    QuickAuth, QuickConnect, ScriptedPrompter, SecretKind, SessionManager, TerminalEvent,
+    TerminalSink, TransferEvent, TransferOptionsDto, TransferRequest, LOCAL_SESSION,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
@@ -537,6 +537,94 @@ macro_rules! server {
             }
         }
     };
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_runs_commands_over_ssh() {
+    let srv = server!("gui-term");
+    let empty_cfg = srv.dir.path().join("ssh_config");
+    std::fs::write(&empty_cfg, "").unwrap();
+    let f = fixture_with_env(ConnectEnv {
+        ssh_config: Some(empty_cfg),
+        known_hosts: Some(srv.known_hosts()),
+        use_default_identities: false,
+    });
+    let quick = QuickConnect {
+        protocol: ProtocolDto::Sftp,
+        host: "127.0.0.1".into(),
+        port: Some(srv.port),
+        user: Some(srv.user()),
+        auth: QuickAuth::KeyFile,
+        password: None,
+        key_path: Some(path(&srv.client_key())),
+        remote_dir: None,
+        insecure_tls: false,
+        credential: None,
+    };
+    let prompter = ScriptedPrompter::new([PromptAnswer::HostKey {
+        decision: HostKeyChoice::AcceptAndSave,
+    }]);
+    let session = f
+        .svc
+        .connect(ConnectRequest::Quick(quick), prompter)
+        .await
+        .unwrap();
+
+    // The local session has no shell.
+    let (tx, mut rx) = unbounded_channel();
+    let sink: Arc<dyn TerminalSink> = Arc::new(move |e: TerminalEvent| {
+        let _ = tx.send(e);
+    });
+    let e = f
+        .svc
+        .open_terminal(LOCAL_SESSION, 80, 24, sink.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, "invalid");
+
+    let id = f
+        .svc
+        .open_terminal(&session.id, 80, 24, sink)
+        .await
+        .unwrap();
+    f.svc
+        .terminal_write(id, b"echo oxfer-$((6*7))\n")
+        .await
+        .unwrap();
+    f.svc.terminal_resize(id, 100, 30).await.unwrap();
+
+    let mut seen = Vec::new();
+    let mut closed = false;
+    let mut exited = false;
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                TerminalEvent::Output { terminal_id, data } => {
+                    assert_eq!(terminal_id, id);
+                    seen.extend(data);
+                    // The echoed command line contains `$((6*7))`; only the
+                    // command's output contains the product.
+                    if !exited && String::from_utf8_lossy(&seen).contains("oxfer-42") {
+                        exited = true;
+                        f.svc.terminal_write(id, b"exit\n").await.unwrap();
+                    }
+                }
+                TerminalEvent::Closed { terminal_id } => {
+                    assert_eq!(terminal_id, id);
+                    closed = true;
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("terminal did not finish");
+    assert!(
+        exited,
+        "no command output in {:?}",
+        String::from_utf8_lossy(&seen)
+    );
+    assert!(closed);
 }
 
 #[tokio::test(flavor = "multi_thread")]

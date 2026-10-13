@@ -2,6 +2,7 @@
 
 mod client;
 mod fs;
+mod shell;
 
 pub use client::{Auth, ConnectOptions, HostKeyDecision, HostKeyPrompt, HostKeyVerifier};
 pub use fs::SftpFs;

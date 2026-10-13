@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use oxfer_core::transfer::{Control, Job, Plan, Transfer};
-use oxfer_core::{remove_all, LocalFs, RemoteFs, RemotePath};
+use oxfer_core::{remove_all, LocalFs, RemoteFs, RemotePath, ShellControl};
 use tokio_util::sync::CancellationToken;
 
 use super::connect::{self, ConnectEnv, ConnectRequest};
@@ -15,6 +15,7 @@ use super::editor::{self, FilePreview, Opener};
 use super::error::{ServiceError, ServiceResult};
 use super::profiles::ProfileStore;
 use super::prompt::Prompter;
+use super::terminal::{TerminalEvent, TerminalSink};
 use super::transfers::{
     conflict_resolver, core_options, forward_events, EventSink, OverwriteDto, SkippedDto,
     TransferEvent, TransferOptionsDto, TransferRequest, TransferState,
@@ -42,6 +43,11 @@ impl Drop for Connecting<'_> {
     }
 }
 
+struct Terminal {
+    session: String,
+    control: Arc<dyn ShellControl>,
+}
+
 struct TransferEntry {
     request: TransferRequest,
     control: Control,
@@ -65,6 +71,8 @@ pub struct SessionManager {
     /// Remote files open in an editor: (session, path) -> local copy.
     edits: Mutex<HashMap<(String, String), PathBuf>>,
     next_edit: AtomicU64,
+    terminals: Mutex<HashMap<u64, Terminal>>,
+    next_terminal: AtomicU64,
 }
 
 fn local_home() -> String {
@@ -128,6 +136,8 @@ impl SessionManager {
             connecting: Mutex::new(Default::default()),
             edits: Mutex::new(HashMap::new()),
             next_edit: AtomicU64::new(1),
+            terminals: Mutex::new(HashMap::new()),
+            next_terminal: AtomicU64::new(1),
         })
     }
 
@@ -335,8 +345,81 @@ impl SessionManager {
             .write()
             .unwrap_or_else(|e| e.into_inner())
             .remove(session)
-            .map(|_| ())
-            .ok_or_else(|| ServiceError::unknown_session(session))
+            .ok_or_else(|| ServiceError::unknown_session(session))?;
+        let closing: Vec<u64> = lock(&self.terminals)
+            .iter()
+            .filter(|(_, t)| t.session == session)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in closing {
+            let _ = self.close_terminal(id);
+        }
+        Ok(())
+    }
+
+    /// Open an interactive shell on `session`. Output and the end of the
+    /// shell are reported through `sink`; returns the terminal id.
+    pub async fn open_terminal(
+        &self,
+        session: &str,
+        cols: u32,
+        rows: u32,
+        sink: Arc<dyn TerminalSink>,
+    ) -> ServiceResult<u64> {
+        if session == LOCAL_SESSION {
+            return Err(ServiceError::invalid(
+                "a terminal needs a connection to a server",
+            ));
+        }
+        let fs = self.fs(session)?;
+        let oxfer_core::Shell {
+            mut output,
+            control,
+        } = fs.open_shell(cols.max(1), rows.max(1)).await?;
+        let id = self.next_terminal.fetch_add(1, Ordering::Relaxed);
+        lock(&self.terminals).insert(
+            id,
+            Terminal {
+                session: session.to_string(),
+                control,
+            },
+        );
+        tokio::spawn(async move {
+            while let Some(data) = output.recv().await {
+                sink.emit(TerminalEvent::Output {
+                    terminal_id: id,
+                    data,
+                });
+            }
+            sink.emit(TerminalEvent::Closed { terminal_id: id });
+        });
+        Ok(id)
+    }
+
+    fn terminal(&self, id: u64) -> ServiceResult<Arc<dyn ShellControl>> {
+        lock(&self.terminals)
+            .get(&id)
+            .map(|t| t.control.clone())
+            .ok_or_else(|| ServiceError::new("unknownTerminal", format!("no terminal #{id}")))
+    }
+
+    pub async fn terminal_write(&self, id: u64, data: &[u8]) -> ServiceResult<()> {
+        Ok(self.terminal(id)?.write(data).await?)
+    }
+
+    pub async fn terminal_resize(&self, id: u64, cols: u32, rows: u32) -> ServiceResult<()> {
+        Ok(self.terminal(id)?.resize(cols.max(1), rows.max(1)).await?)
+    }
+
+    /// Close a terminal; the shell ends and `Closed` is emitted.
+    pub fn close_terminal(&self, id: u64) -> ServiceResult<()> {
+        let t = lock(&self.terminals)
+            .remove(&id)
+            .ok_or_else(|| ServiceError::new("unknownTerminal", format!("no terminal #{id}")))?;
+        tokio::spawn(async move {
+            let _ = t.control.close().await;
+        });
+        Ok(())
     }
 
     pub async fn list_dir(&self, session: &str, path: &str) -> ServiceResult<Vec<EntryDto>> {
