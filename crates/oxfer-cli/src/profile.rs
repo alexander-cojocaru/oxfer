@@ -56,7 +56,7 @@ pub enum Action {
         /// Initial remote directory
         #[arg(long)]
         dir: Option<String>,
-        /// Group (folder) to list the profile under
+        /// Group (folder) to list the profile under; use `/` for sub groups (`Customers/ACME`)
         #[arg(short, long)]
         group: Option<String>,
         /// Use a saved credential (see `oxfer credential`) for user and authentication

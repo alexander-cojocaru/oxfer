@@ -4,7 +4,7 @@
   import { api } from '../lib/api';
   import { app } from '../lib/state.svelte';
   import { t } from '../lib/i18n';
-  import { groupProfiles } from '../lib/profiles';
+  import { groupProfiles, parentGroups } from '../lib/profiles';
   import type { Credential, Profile, SessionInfo } from '../lib/types';
 
   let {
@@ -82,6 +82,10 @@
 
   // While searching, show every match regardless of collapsed groups.
   const isOpen = (name: string | null) => name === null || query.trim() !== '' || !collapsed.has(name);
+  // Depth is unlimited; indentation stops growing so deep trees keep room for the labels.
+  const indent = (depth: number) => Math.min(depth, 8) * 14;
+  // A sub group is hidden while any of its parents is collapsed.
+  const isShown = (name: string | null) => name === null || parentGroups(name).every(isOpen);
 
   async function remove(p: Profile) {
     confirmDelete = null;
@@ -150,22 +154,28 @@
       <p class="empty">{t('noProfileMatches')}</p>
     {/if}
     {#each groups as g (g.name ?? '')}
+      {#if isShown(g.name)}
       {#if g.name !== null}
         {@const open = isOpen(g.name)}
         <button
           type="button"
           class="group"
+          style:padding-left="{6 + indent(g.depth)}px"
           aria-expanded={open}
           onclick={() => toggleGroup(g.name!)}
         >
           <span class="chevron" class:open aria-hidden="true">▸</span>
           <Icon name="folder" size={14} />
-          <span class="group-name">{g.name}</span>
-          <span class="count">{g.profiles.length}</span>
+          <span class="group-name" title={g.name}>{g.label}</span>
+          <span class="count">{g.total}</span>
         </button>
       {/if}
       {#if isOpen(g.name)}
-        <ul class:nested={g.name !== null} aria-label={g.name ?? t('savedProfiles')}>
+        <ul
+          class:nested={g.name !== null}
+          style:padding-left={g.name !== null ? `${14 + indent(g.depth)}px` : undefined}
+          aria-label={g.name ?? t('savedProfiles')}
+        >
           {#each g.profiles as p (p.name)}
             <li class="item profile">
               <button
@@ -194,6 +204,7 @@
             </li>
           {/each}
         </ul>
+      {/if}
       {/if}
     {/each}
   {/if}
