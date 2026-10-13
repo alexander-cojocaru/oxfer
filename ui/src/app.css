@@ -14,7 +14,7 @@
   --bg-selected-strong: #c3d6ff;
   --fg: #1d2330;
   --fg-muted: #5c6577;
-  --fg-faint: #8a93a3;
+  --fg-faint: #6b7385;
   --border: #d9dde4;
   --border-strong: #c3c9d3;
   --accent: #4f46e5;
@@ -22,6 +22,7 @@
   --accent-fg: #ffffff;
   --accent-soft: #e8e7fd;
   --danger: #dc2626;
+  --danger-fg: #ffffff;
   --danger-soft: #fde8e8;
   --warn: #b45309;
   --warn-soft: #fef3c7;
@@ -42,7 +43,7 @@
     --bg-selected-strong: #36407a;
     --fg: #e6e9ef;
     --fg-muted: #a3abba;
-    --fg-faint: #6f7787;
+    --fg-faint: #8d95a6;
     --border: #2c313b;
     --border-strong: #3a404c;
     --accent: #818cf8;
@@ -50,6 +51,7 @@
     --accent-fg: #0b0d12;
     --accent-soft: #2a2d55;
     --danger: #f87171;
+    --danger-fg: #0b0d12;
     --danger-soft: #3b1d1f;
     --warn: #fbbf24;
     --warn-soft: #3a2e12;
@@ -106,9 +108,39 @@ textarea {
   min-height: 28px;
 }
 
+input::placeholder {
+  color: var(--fg-faint);
+}
+
+input:hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus) {
+  border-color: var(--fg-faint);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--focus);
+}
+
 input:disabled,
 select:disabled {
   opacity: 0.6;
+  cursor: not-allowed;
+}
+
+select {
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--bg-selected-strong);
+}
+
+/* slim, theme-aware scrollbars (WebKit/WebView2 honour these) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 button {
@@ -131,6 +163,14 @@ button {
   border: 1px solid var(--border-strong);
   background: var(--bg-elev);
   white-space: nowrap;
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.btn:active:not(:disabled) {
+  background: var(--bg-selected);
 }
 
 .btn:hover:not(:disabled) {
@@ -139,7 +179,12 @@ button {
 
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
+}
+
+.btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .btn.primary {
@@ -149,14 +194,18 @@ button {
 }
 
 .btn.primary:hover:not(:disabled) {
-  filter: brightness(1.08);
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 88%, var(--fg));
+  border-color: transparent;
+}
+
+.btn.primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 76%, var(--fg));
 }
 
 .btn.danger {
   background: var(--danger);
   border-color: var(--danger);
-  color: #fff;
+  color: var(--danger-fg);
 }
 
 .btn.ghost {
