@@ -47,6 +47,56 @@ jobs:
         with:
           files: ${{ env.ASSET }}
 
+  macos-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the frontend
+        working-directory: ui
+        run: npm ci && npm run build
+      - name: Build oxfer.app (universal)
+        working-directory: crates/oxfer-gui
+        run: npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles app
+      # The signing certificate is the self-signed "oxfer local signing"
+      # identity, exported as a base64 .p12 (see README, "Releasing").
+      - name: Import the signing certificate
+        env:
+          P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then
+            echo "::error::secret MACOS_SIGNING_P12 is not set (see README, Releasing)"
+            exit 1
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kc_pass="$(openssl rand -hex 16)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$kc_pass" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kc_pass" "$kc"
+          security import "$RUNNER_TEMP/signing.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_pass" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/signing.p12"
+          echo "OXFER_SIGN_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+      - name: Sign and package
+        run: |
+          dmg="oxfer-${GITHUB_REF_NAME}-macos-universal.dmg"
+          scripts/package-macos-dmg.sh target/universal-apple-darwin/release/bundle/macos/oxfer.app "$dmg"
+          echo "ASSET=$dmg" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+
   formula:
     needs: build
     runs-on: ubuntu-latest
