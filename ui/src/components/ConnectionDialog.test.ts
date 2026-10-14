@@ -95,6 +95,7 @@ describe('ConnectionDialog', () => {
         credential: null,
       },
       null,
+      null,
     );
     expect(onsaved).toHaveBeenCalled();
     expect(mocked.connect).not.toHaveBeenCalled();
@@ -122,7 +123,7 @@ describe('ConnectionDialog', () => {
     await user.type(name, 'new');
     await user.type(screen.getByLabelText('Password'), 'pw');
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(mocked.saveProfile).toHaveBeenCalledWith('old', { ...profile, name: 'new' }, 'pw');
+    expect(mocked.saveProfile).toHaveBeenCalledWith('old', { ...profile, name: 'new' }, 'pw', null);
   });
 
   it('a chosen credential replaces user and login fields', async () => {
@@ -152,6 +153,31 @@ describe('ConnectionDialog', () => {
       null,
       expect.objectContaining({ name: 'web', user: null, auth: { method: 'agent' }, credential: 'deploy' }),
       null,
+      null,
     );
+  });
+
+  it('duplicates a profile: prefilled copy, editable name and host, password copied server side', async () => {
+    const user = userEvent.setup();
+    mocked.saveProfile.mockImplementation(async (_o, p) => p);
+    const profile = {
+      name: 'web',
+      protocol: 'sftp' as const,
+      host: '10.0.0.1',
+      port: 2222,
+      user: 'u',
+      auth: { method: 'password' as const },
+      remoteDir: '/srv',
+      group: 'ACME',
+      credential: null,
+    };
+    render(ConnectionDialog, { props: { mode: 'profile', profile, duplicate: true, onclose: vi.fn() } });
+    expect(screen.getByLabelText('Profile name')).toHaveValue('web copy');
+    expect(screen.getByLabelText('Host')).toHaveValue('10.0.0.1');
+    const host = screen.getByLabelText('Host');
+    await user.clear(host);
+    await user.type(host, '10.0.0.2');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(mocked.saveProfile).toHaveBeenCalledWith(null, { ...profile, name: 'web copy', host: '10.0.0.2' }, null, 'web');
   });
 });

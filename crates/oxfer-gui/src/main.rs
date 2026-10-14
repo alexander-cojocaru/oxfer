@@ -204,11 +204,39 @@ fn save_profile(
     original: Option<String>,
     profile: ProfileDto,
     password: Option<SecretString>,
+    copy_from: Option<String>,
 ) -> CmdResult<ProfileDto> {
     state
         .svc
         .profiles()
-        .save(original.as_deref(), profile, password)
+        .save(original.as_deref(), profile, password, copy_from.as_deref())
+}
+
+/// `~` / `~/x` to the home directory (typed paths do not go through a shell).
+fn expand_home(path: &str) -> std::path::PathBuf {
+    let home = directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf());
+    match (path.strip_prefix("~/"), path, home) {
+        (Some(rest), _, Some(h)) => h.join(rest),
+        (_, "~", Some(h)) => h,
+        _ => path.into(),
+    }
+}
+
+#[tauri::command]
+fn export_profiles(state: State<'_, AppState>, path: String) -> CmdResult<usize> {
+    state.svc.profiles().export_to(&expand_home(&path))
+}
+
+#[tauri::command]
+fn import_profiles(
+    state: State<'_, AppState>,
+    path: String,
+    overwrite: bool,
+) -> CmdResult<oxfer_gui::service::ImportDto> {
+    state
+        .svc
+        .profiles()
+        .import_from(&expand_home(&path), overwrite)
 }
 
 #[tauri::command]
@@ -367,6 +395,8 @@ fn main() {
             list_profiles,
             save_profile,
             delete_profile,
+            export_profiles,
+            import_profiles,
             read_preview,
             open_in_editor,
             list_credentials,

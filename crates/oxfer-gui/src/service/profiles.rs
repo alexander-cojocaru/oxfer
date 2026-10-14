@@ -11,6 +11,13 @@ use super::dto::ProtocolDto;
 use super::error::{ServiceError, ServiceResult};
 use super::prompt::SecretString;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ImportDto {
+    pub added: usize,
+    pub replaced: usize,
+    pub skipped: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "method",
@@ -164,6 +171,31 @@ impl ProfileStore {
         Ok(Config::load_from(&self.path)?)
     }
 
+    /// Write all profiles and credentials to `path` (no passwords).
+    pub fn export_to(&self, path: &std::path::Path) -> ServiceResult<usize> {
+        let _g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let cfg = self.load()?;
+        cfg.save_to(path)?;
+        Ok(cfg.list().len() + cfg.credentials().len())
+    }
+
+    /// Merge an exported file into the saved profiles.
+    pub fn import_from(&self, path: &std::path::Path, overwrite: bool) -> ServiceResult<ImportDto> {
+        let _g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        if !path.is_file() {
+            return Err(oxfer_config::Error::NotFound(path.display().to_string()).into());
+        }
+        let incoming = Config::load_from(path)?;
+        let mut cfg = self.load()?;
+        let r = cfg.merge(&incoming, overwrite)?;
+        cfg.save_to(&self.path)?;
+        Ok(ImportDto {
+            added: r.added.len(),
+            replaced: r.replaced.len(),
+            skipped: r.skipped.len(),
+        })
+    }
+
     pub fn list(&self) -> ServiceResult<Vec<ProfileDto>> {
         let mut v: Vec<_> = self.load()?.list().iter().map(ProfileDto::from).collect();
         v.sort_by_key(|p| p.name.to_lowercase());
@@ -256,11 +288,14 @@ impl ProfileStore {
     /// Create (`original` = `None`) or replace the profile `original`
     /// (possibly renaming it). A non-empty `password` is stored in the secret
     /// store; switching away from password auth deletes the stored one.
+    /// With `copy_from` (a new profile cloned from an existing one) and no new
+    /// password, the stored password of `copy_from` is copied.
     pub fn save(
         &self,
         original: Option<&str>,
         profile: ProfileDto,
         password: Option<SecretString>,
+        copy_from: Option<&str>,
     ) -> ServiceResult<ProfileDto> {
         let _g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
         let new = profile.into_profile()?;
@@ -280,7 +315,7 @@ impl ProfileStore {
         if new.credential.is_none() && new.auth == AuthMethod::Password {
             if let Some(pw) = &password {
                 self.secrets.set(&new.name, &Secret::new(pw.0.clone()))?;
-            } else if let Some(old) = renamed_from {
+            } else if let Some(old) = renamed_from.or(copy_from) {
                 if let Some(s) = self.secrets.get(old)? {
                     self.secrets.set(&new.name, &s)?;
                 }
@@ -336,6 +371,7 @@ mod tests {
                 None,
                 dto("web", AuthDto::Password),
                 Some(SecretString("pw".into())),
+                None,
             )
             .unwrap();
         assert_eq!(saved.remote_dir, None);
@@ -346,13 +382,36 @@ mod tests {
 
         // duplicate
         let e = store
-            .save(None, dto("web", AuthDto::Agent), None)
+            .save(None, dto("web", AuthDto::Agent), None, None)
             .unwrap_err();
         assert_eq!(e.code, "alreadyExists");
 
+        // duplicate: copy_from carries the password over, original stays intact
+        store
+            .save(None, dto("web-copy", AuthDto::Password), None, Some("web"))
+            .unwrap();
+        assert_eq!(secrets.get("web-copy").unwrap().unwrap().expose(), "pw");
+        assert_eq!(secrets.get("web").unwrap().unwrap().expose(), "pw");
+        store.delete("web-copy").unwrap();
+        assert!(secrets.get("web-copy").unwrap().is_none());
+
+        // export carries no password; import merges and skips existing names
+        let file = dir.path().join("export.toml");
+        assert_eq!(store.export_to(&file).unwrap(), 1);
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("pw"));
+        let r = store.import_from(&file, false).unwrap();
+        assert_eq!((r.added, r.replaced, r.skipped), (0, 0, 1));
+        assert_eq!(
+            store
+                .import_from(&dir.path().join("nope.toml"), false)
+                .unwrap_err()
+                .code,
+            "notFound"
+        );
+
         // rename keeps the password
         store
-            .save(Some("web"), dto("web2", AuthDto::Password), None)
+            .save(Some("web"), dto("web2", AuthDto::Password), None, None)
             .unwrap();
         assert!(secrets.get("web").unwrap().is_none());
         assert_eq!(secrets.get("web2").unwrap().unwrap().expose(), "pw");
@@ -360,17 +419,23 @@ mod tests {
 
         // switching to agent removes the password
         store
-            .save(Some("web2"), dto("web2", AuthDto::Agent), None)
+            .save(Some("web2"), dto("web2", AuthDto::Agent), None, None)
             .unwrap();
         assert!(secrets.get("web2").unwrap().is_none());
 
         // invalid input
         let mut bad = dto("x", AuthDto::Agent);
         bad.host = "".into();
-        assert_eq!(store.save(None, bad, None).unwrap_err().code, "invalid");
+        assert_eq!(
+            store.save(None, bad, None, None).unwrap_err().code,
+            "invalid"
+        );
         let mut local = dto("x", AuthDto::Agent);
         local.protocol = ProtocolDto::Local;
-        assert_eq!(store.save(None, local, None).unwrap_err().code, "invalid");
+        assert_eq!(
+            store.save(None, local, None, None).unwrap_err().code,
+            "invalid"
+        );
 
         store.delete("web2").unwrap();
         assert!(store.list().unwrap().is_empty());
@@ -399,14 +464,14 @@ mod tests {
         let mut p = dto("web", AuthDto::Password);
         p.credential = Some("nope".into());
         assert_eq!(
-            store.save(None, p.clone(), None).unwrap_err().code,
+            store.save(None, p.clone(), None, None).unwrap_err().code,
             "notFound"
         );
 
         // using the credential: resolved on get, own password not stored
         p.credential = Some("deploy".into());
         store
-            .save(None, p, Some(SecretString("own".into())))
+            .save(None, p, Some(SecretString("own".into())), None)
             .unwrap();
         assert!(secrets.get("web").unwrap().is_none());
         let resolved = store.get("web").unwrap();

@@ -3,6 +3,7 @@
   import ChangelogDialog from './components/ChangelogDialog.svelte';
   import UpdateDialog from './components/UpdateDialog.svelte';
   import ConnectionDialog from './components/ConnectionDialog.svelte';
+  import TransferConfigDialog from './components/TransferConfigDialog.svelte';
   import CredentialDialog from './components/CredentialDialog.svelte';
   import FilePane, { type TransferIntent } from './components/FilePane.svelte';
   import Icon from './components/Icon.svelte';
@@ -31,8 +32,9 @@
   let connecting = $state<string | null>(null);
   let dialog = $state<
     | { mode: 'quick' }
-    | { mode: 'profile'; profile: Profile | null }
+    | { mode: 'profile'; profile: Profile | null; duplicate?: boolean }
     | { mode: 'credential'; credential: Credential | null }
+    | { mode: 'export' | 'import' }
     | null
   >(null);
   let changelogOpen = $state(false);
@@ -296,6 +298,8 @@
       onconnectprofile={connectProfile}
       onnewprofile={() => (dialog = { mode: 'profile', profile: null })}
       oneditprofile={(p) => (dialog = { mode: 'profile', profile: p })}
+      onduplicateprofile={(p) => (dialog = { mode: 'profile', profile: p, duplicate: true })}
+      onconfigtransfer={(mode) => (dialog = { mode })}
       onnewcredential={() => (dialog = { mode: 'credential', credential: null })}
       oneditcredential={(c) => (dialog = { mode: 'credential', credential: c })}
       ondisconnect={disconnect}
@@ -381,11 +385,14 @@
   <ConnectionDialog
     mode="profile"
     profile={dialog.profile}
+    duplicate={dialog.duplicate}
     groups={groupNames(app.profiles)}
     credentials={app.credentials}
     onsaved={() => app.loadProfiles()}
     onclose={() => (dialog = null)}
   />
+{:else if dialog?.mode === 'export' || dialog?.mode === 'import'}
+  <TransferConfigDialog mode={dialog.mode} onclose={() => (dialog = null)} />
 {:else if dialog?.mode === 'credential'}
   <CredentialDialog credential={dialog.credential} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
 {/if}

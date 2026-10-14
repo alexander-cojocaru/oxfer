@@ -9,6 +9,7 @@
   let {
     mode,
     profile = null,
+    duplicate = false,
     groups = [],
     credentials = [],
     onconnected,
@@ -18,6 +19,8 @@
     /** `quick`: connect now (optionally saving); `profile`: create/edit a saved profile. */
     mode: 'quick' | 'profile';
     profile?: Profile | null;
+    /** Treat `profile` as a template for a new profile (stored password is copied). */
+    duplicate?: boolean;
     /** Existing group names, offered as suggestions. */
     groups?: string[];
     /** Saved credentials to choose from instead of entering user and auth. */
@@ -31,7 +34,9 @@
 
   // svelte-ignore state_referenced_locally
   const initial = profile;
-  let name = $state(initial?.name ?? '');
+  // svelte-ignore state_referenced_locally
+  const isCopy = duplicate && initial !== null;
+  let name = $state(initial ? (isCopy ? `${initial.name} ${t('copySuffix')}` : initial.name) : '');
   let protocol = $state<RemoteProtocol>(initial?.protocol ?? 'sftp');
   let host = $state(initial?.host ?? '');
   let port = $state<string>(initial?.port ? String(initial.port) : '');
@@ -120,9 +125,10 @@
     try {
       if (saving) {
         const saved = await api.saveProfile(
-          mode === 'profile' ? (initial?.name ?? null) : null,
+          mode === 'profile' && !isCopy ? (initial?.name ?? null) : null,
           buildProfile(),
           !usesCredential && auth === 'password' && password ? password : null,
+          isCopy ? (initial?.name ?? null) : null,
         );
         onsaved?.(saved);
         if (mode === 'profile') {
@@ -156,7 +162,7 @@
     }
   }
 
-  const title = $derived(mode === 'quick' ? t('quickConnect') : initial ? t('editProfile') : t('newProfile'));
+  const title = $derived(mode === 'quick' ? t('quickConnect') : isCopy ? t('duplicateProfile') : initial ? t('editProfile') : t('newProfile'));
 </script>
 
 <Modal {title} onclose={busy ? undefined : onclose} width={520}>

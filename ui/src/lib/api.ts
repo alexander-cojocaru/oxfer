@@ -45,8 +45,11 @@ export const api = {
   clearFinishedTransfers: () => invoke<void>('clear_finished_transfers'),
 
   listProfiles: () => invoke<Profile[]>('list_profiles'),
-  saveProfile: (original: string | null, profile: Profile, password: string | null) =>
-    invoke<Profile>('save_profile', { original, profile, password }),
+  saveProfile: (original: string | null, profile: Profile, password: string | null, copyFrom: string | null = null) =>
+    invoke<Profile>('save_profile', { original, profile, password, copyFrom }),
+  exportProfiles: (path: string) => invoke<number>('export_profiles', { path }),
+  importProfiles: (path: string, overwrite: boolean) =>
+    invoke<{ added: number; replaced: number; skipped: number }>('import_profiles', { path, overwrite }),
   deleteProfile: (name: string) => invoke<void>('delete_profile', { name }),
 
   listCredentials: () => invoke<Credential[]>('list_credentials'),
