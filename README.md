@@ -154,6 +154,21 @@ local `install-macos-app.sh` builds share one identity. Set it up once:
    rm oxfer-signing.p12
    ```
 
+The app updates itself: "Check for updates" in the status bar reads
+`latest.json` from the latest release, downloads the signed `.app.tar.gz` and
+verifies it against the public key in `crates/oxfer-gui/tauri.conf.json`.
+The release job needs the matching private key (generated once with
+`npx @tauri-apps/cli@2 signer generate -w ~/.tauri/oxfer-updater.key`):
+
+```
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/oxfer-updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD   # only if the key has a password
+```
+
+Keep a backup of the private key: without it, installed apps cannot verify
+(and therefore never accept) a new update, and the public key in
+`tauri.conf.json` would have to be replaced with a manual re-install.
+
 ## License
 
 Dual-licensed under MIT or Apache-2.0, at your option.

@@ -93,9 +93,30 @@ jobs:
           dmg="oxfer-${GITHUB_REF_NAME}-macos-universal.dmg"
           scripts/package-macos-dmg.sh target/universal-apple-darwin/release/bundle/macos/oxfer.app "$dmg"
           echo "ASSET=$dmg" >> "$GITHUB_ENV"
+      # The in-app updater downloads the signed app as .app.tar.gz and verifies
+      # it against the public key in tauri.conf.json (see README, "Releasing").
+      - name: Build the updater archive and manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::secret TAURI_SIGNING_PRIVATE_KEY is not set (see README, Releasing)"
+            exit 1
+          fi
+          archive="oxfer-${GITHUB_REF_NAME}-macos-universal.app.tar.gz"
+          tar -czf "$archive" -C target/universal-apple-darwin/release/bundle/macos oxfer.app
+          npx --yes @tauri-apps/cli@2 signer sign "$archive"
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
+          scripts/gen-latest-json.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$archive" "$archive.sig" release-notes.md > latest.json
+          cat latest.json
+          echo "UPDATER_ASSET=$archive" >> "$GITHUB_ENV"
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: |
+            ${{ env.ASSET }}
+            ${{ env.UPDATER_ASSET }}
+            latest.json
 
   formula:
     needs: build

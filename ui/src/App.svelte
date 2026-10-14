@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ChangelogDialog from './components/ChangelogDialog.svelte';
+  import UpdateDialog from './components/UpdateDialog.svelte';
   import ConnectionDialog from './components/ConnectionDialog.svelte';
   import CredentialDialog from './components/CredentialDialog.svelte';
   import FilePane, { type TransferIntent } from './components/FilePane.svelte';
@@ -35,6 +36,7 @@
     | null
   >(null);
   let changelogOpen = $state(false);
+  let updateOpen = $state(false);
   let terminal = $state<SessionInfo | null>(null);
   let panes = $state<Record<Side, FilePane | undefined>>({ left: undefined, right: undefined });
 
@@ -365,6 +367,7 @@
     <button type="button" class="link" title={t('changelog')} onclick={() => (changelogOpen = true)}>
       v{__APP_VERSION__}
     </button>
+    <button type="button" class="link" onclick={() => (updateOpen = true)}>{t('checkForUpdates')}</button>
     <button type="button" class="link" onclick={() => (queueOpen = !queueOpen)} aria-pressed={queueOpen}>
       {t('transfers')}: {t('activeTransfers', { count: activeTransfers })}
       {#if activeTransfers}· {formatSpeed(speed)}{/if}
@@ -389,6 +392,10 @@
 
 {#if changelogOpen}
   <ChangelogDialog onclose={() => (changelogOpen = false)} />
+{/if}
+
+{#if updateOpen}
+  <UpdateDialog {activeTransfers} onclose={() => (updateOpen = false)} />
 {/if}
 
 {#if terminal}
