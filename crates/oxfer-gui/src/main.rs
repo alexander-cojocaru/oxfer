@@ -10,8 +10,9 @@ use oxfer_gui::service::{
     ConnectEnv, ConnectRequest, CredentialDto, EntryDto, EventSink, FilePreview, ProfileDto,
     ProfileStore, PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError,
     SessionInfo, SessionManager, TerminalEvent, TerminalSink, TransferEvent, TransferRequest,
+    VncInfo, VncSink,
 };
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use tracing_subscriber::EnvFilter;
@@ -323,6 +324,43 @@ async fn close_terminal(state: State<'_, AppState>, id: u64) -> CmdResult<()> {
     state.svc.close_terminal(id)
 }
 
+/// Opens a remote screen. `on_message` receives the screen as binary
+/// messages (see `oxfer_vnc::Event::encode`).
+#[tauri::command]
+async fn vnc_open(
+    state: State<'_, AppState>,
+    request: ConnectRequest,
+    on_message: Channel<InvokeResponseBody>,
+) -> CmdResult<VncInfo> {
+    let sink: Arc<dyn VncSink> = Arc::new(move |message: Vec<u8>| {
+        if let Err(e) = on_message.send(InvokeResponseBody::Raw(message)) {
+            tracing::debug!("cannot send a screen update: {e}");
+        }
+    });
+    state.svc.vnc_open(request, state.prompter(), sink).await
+}
+
+#[tauri::command]
+fn vnc_key(state: State<'_, AppState>, id: u64, keysym: u32, down: bool) -> CmdResult<()> {
+    state.svc.vnc_key(id, keysym, down)
+}
+
+#[tauri::command]
+fn vnc_pointer(state: State<'_, AppState>, id: u64, x: u16, y: u16, buttons: u8) -> CmdResult<()> {
+    state.svc.vnc_pointer(id, x, y, buttons)
+}
+
+#[tauri::command]
+fn vnc_clipboard(state: State<'_, AppState>, id: u64, text: String) -> CmdResult<()> {
+    state.svc.vnc_clipboard(id, text)
+}
+
+// Async so it runs on the Tokio runtime (closing wakes the connection's tasks).
+#[tauri::command]
+async fn vnc_close(state: State<'_, AppState>, id: u64) -> CmdResult<()> {
+    state.svc.vnc_close(id)
+}
+
 #[tauri::command]
 fn answer_prompt(state: State<'_, AppState>, id: u64, answer: PromptAnswer) -> CmdResult<()> {
     state.broker.answer(id, answer)
@@ -406,6 +444,11 @@ fn main() {
             terminal_write,
             terminal_resize,
             close_terminal,
+            vnc_open,
+            vnc_key,
+            vnc_pointer,
+            vnc_clipboard,
+            vnc_close,
             answer_prompt,
             check_for_update,
             install_update,

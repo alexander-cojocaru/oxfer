@@ -142,7 +142,7 @@ async fn connect_ftp(
         Protocol::Ftp => TlsMode::None,
         Protocol::FtpsExplicit => TlsMode::Explicit,
         Protocol::FtpsImplicit => TlsMode::Implicit,
-        Protocol::Sftp => bail!("not an FTP protocol"),
+        Protocol::Sftp | Protocol::Vnc => bail!("not an FTP protocol"),
     };
     o.danger_accept_invalid_certs = args.insecure_tls;
     Ok(FtpFs::connect(o).await?)
@@ -174,6 +174,10 @@ async fn connect_profile(args: &ConnArgs, profile: &Profile) -> Result<Arc<dyn R
             apply_sftp_common(args, &mut opts);
             Ok(Arc::new(SftpFs::connect(opts).await?))
         }
+        Protocol::Vnc => bail!(
+            "{:?} is a VNC profile: it opens a remote screen, not files (use the desktop app)",
+            profile.name
+        ),
         proto => {
             let user = profile.user.clone().unwrap_or_else(|| "anonymous".into());
             let password = match &profile.auth {

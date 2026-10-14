@@ -327,7 +327,7 @@ async fn connect_ftp(
         Protocol::Ftp => TlsMode::None,
         Protocol::FtpsExplicit => TlsMode::Explicit,
         Protocol::FtpsImplicit => TlsMode::Implicit,
-        Protocol::Sftp => return Err(ServiceError::invalid("not an FTP protocol")),
+        Protocol::Sftp | Protocol::Vnc => return Err(ServiceError::invalid("not an FTP protocol")),
     };
     if tls == TlsMode::None {
         confirm(
@@ -392,6 +392,11 @@ pub(crate) async fn connect(
     match req {
         ConnectRequest::Profile { name } => {
             let profile = profiles.get(&name)?;
+            if profile.protocol == Protocol::Vnc {
+                return Err(ServiceError::invalid(
+                    "a VNC profile opens a remote screen, not a file session",
+                ));
+            }
             connect_profile(env, profiles, &profile, prompter).await
         }
         ConnectRequest::Quick(q) => {
@@ -527,6 +532,11 @@ async fn connect_quick(
         .protocol
         .to_config()
         .ok_or_else(|| ServiceError::invalid("cannot connect to the local protocol"))?;
+    if protocol == Protocol::Vnc {
+        return Err(ServiceError::invalid(
+            "a VNC connection opens a remote screen, not a file session",
+        ));
+    }
     let user_in = q
         .user
         .as_deref()

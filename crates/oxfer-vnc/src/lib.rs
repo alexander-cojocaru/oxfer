@@ -15,6 +15,7 @@ mod handshake;
 mod message;
 mod session;
 
+pub use auth::vnc_response as vnc_auth_response;
 pub use error::{Error, Result};
 pub use handshake::ServerInit;
 pub use message::{Event, Op};

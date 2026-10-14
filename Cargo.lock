@@ -3819,6 +3819,7 @@ dependencies = [
  "oxfer-ftp",
  "oxfer-sftp",
  "oxfer-testutil",
+ "oxfer-vnc",
  "serde",
  "serde_json",
  "tauri",

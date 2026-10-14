@@ -20,6 +20,7 @@ use super::transfers::{
     conflict_resolver, core_options, forward_events, EventSink, OverwriteDto, SkippedDto,
     TransferEvent, TransferOptionsDto, TransferRequest, TransferState,
 };
+use super::vnc::{VncHub, VncInfo, VncSink};
 
 /// Id of the built-in local file system session.
 pub const LOCAL_SESSION: &str = "local";
@@ -73,6 +74,7 @@ pub struct SessionManager {
     next_edit: AtomicU64,
     terminals: Mutex<HashMap<u64, Terminal>>,
     next_terminal: AtomicU64,
+    vnc: VncHub,
 }
 
 fn local_home() -> String {
@@ -138,6 +140,7 @@ impl SessionManager {
             next_edit: AtomicU64::new(1),
             terminals: Mutex::new(HashMap::new()),
             next_terminal: AtomicU64::new(1),
+            vnc: VncHub::default(),
         })
     }
 
@@ -420,6 +423,33 @@ impl SessionManager {
             let _ = t.control.close().await;
         });
         Ok(())
+    }
+
+    /// Open a remote screen (a VNC profile or quick connect). Screen
+    /// messages go to `sink`; returns the screen's id.
+    pub async fn vnc_open(
+        &self,
+        request: ConnectRequest,
+        prompter: Arc<dyn Prompter>,
+        sink: Arc<dyn VncSink>,
+    ) -> ServiceResult<VncInfo> {
+        self.vnc.open(&self.profiles, request, prompter, sink).await
+    }
+
+    pub fn vnc_key(&self, id: u64, keysym: u32, down: bool) -> ServiceResult<()> {
+        self.vnc.key(id, keysym, down)
+    }
+
+    pub fn vnc_pointer(&self, id: u64, x: u16, y: u16, buttons: u8) -> ServiceResult<()> {
+        self.vnc.pointer(id, x, y, buttons)
+    }
+
+    pub fn vnc_clipboard(&self, id: u64, text: String) -> ServiceResult<()> {
+        self.vnc.clipboard(id, text)
+    }
+
+    pub fn vnc_close(&self, id: u64) -> ServiceResult<()> {
+        self.vnc.close(id)
     }
 
     pub async fn list_dir(&self, session: &str, path: &str) -> ServiceResult<Vec<EntryDto>> {

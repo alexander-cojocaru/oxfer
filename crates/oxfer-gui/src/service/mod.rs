@@ -11,6 +11,7 @@ mod profiles;
 mod prompt;
 mod terminal;
 mod transfers;
+mod vnc;
 
 pub use connect::{ConnectEnv, ConnectRequest, QuickAuth, QuickConnect};
 pub use dto::{EntryDto, EntryKindDto, ProtocolDto, SessionInfo};
@@ -27,3 +28,4 @@ pub use transfers::{
     EventSink, OverwriteDto, SkippedDto, TransferEvent, TransferOptionsDto, TransferRequest,
     PROGRESS_INTERVAL,
 };
+pub use vnc::{VncInfo, VncSink};
