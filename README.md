@@ -1,33 +1,82 @@
 # oxfer
 
-A fast, safe SFTP/FTP client written in Rust: command line, interactive shell,
-terminal UI and (in progress) a desktop app, all on one transfer engine.
+A fast, safe SFTP/FTP client written in Rust. One transfer engine powers a
+command line, an interactive shell, a terminal UI and a desktop app.
 
-See [plan.md](plan.md) for the roadmap.
+The name is *oxide* (Rust) + *transfer*.
+
+- **Fast**: keeps 64 SFTP requests in flight per file and transfers several
+  files in parallel (see [Performance](#performance)).
+- **Safe**: strict `known_hosts` checking, files appear only when complete, and
+  hostile servers cannot write outside your destination directory.
+- **Cross-platform**: the CLI builds on macOS, Linux and Windows; the desktop
+  app is currently packaged for macOS.
 
 ## Features
 
-- **SFTP** over a pure-Rust SSH stack (`russh`): password, key file and
-  ssh-agent authentication; strict `known_hosts` checking with an
-  accept-and-save prompt; a *changed* host key is always refused.
+- **SFTP** over a pure-Rust SSH stack ([`russh`](https://crates.io/crates/russh)):
+  password, key file and ssh-agent authentication, jump hosts, and an
+  accept-and-save prompt for new host keys. A *changed* host key is always
+  refused.
+- **FTP and FTPS** as a secondary backend.
 - **Transfer engine**: recursive directories, globs, parallel files, resume of
   partial files, retries with exponential backoff, overwrite policies
   (`always` / `skip` / `newer`), optional SHA-256 verification, Ctrl-C to cancel.
-  Downloads and uploads go to a `.oxfer-part` file first and are renamed when
-  complete, so a half-written file is never mistaken for the real one. The
-  partial file's name includes a fingerprint of the source's size and
-  modification time, so a transfer only resumes a partial copy of the same
-  version of the file.
-- Server-supplied file names are validated, so a hostile server cannot make a
-  download write outside the destination directory.
+  - Transfers go to a `.oxfer-part` file first and are renamed when complete.
+    The partial file's name includes a fingerprint of the source's size and
+    modification time, so a transfer only resumes a copy of the same version of
+    the file.
+  - Server-supplied file names are validated before anything is written.
 - **Profiles (bookmarks)** in groups, searchable by name, host, user, group or
-  directory, and **shared credentials**: save a user and login (password in the
-  OS keychain, key file, agent or ask-every-time) once and use it for several
-  profiles or quick connects.
-- **Desktop app**: dual-pane browser, transfer queue, text preview of files
-  (F3 or double-click) and editing in your text editor (F4). A remote file is
-  edited as a private local copy; every save is uploaded back as a transfer,
-  and the copy is removed when you disconnect.
+  directory, and **shared credentials**: save a login once (password in the OS
+  keychain, key file, agent or ask-every-time) and reuse it across profiles.
+- **Desktop app**: dual-pane browser, transfer queue, SSH terminal, text
+  preview of files (F3 or double-click) and editing in your own text editor
+  (F4). A remote file is edited as a private local copy; every save is uploaded
+  back, and the copy is removed when you disconnect.
+
+## Install
+
+### Desktop app (macOS)
+
+Download `oxfer-<version>-macos-universal.dmg` from the
+[latest release](https://github.com/alexander-cojocaru/oxfer/releases/latest)
+(Apple silicon and Intel), open it and drag oxfer to Applications.
+
+The app is signed with a self-signed certificate rather than an Apple Developer
+ID, so macOS blocks the first launch. Open System Settings → Privacy & Security
+and click "Open Anyway", or run:
+
+```
+xattr -dr com.apple.quarantine /Applications/oxfer.app
+```
+
+After that, "Check for updates" in the status bar downloads and installs new
+releases; updates are verified against a public key built into the app.
+
+### Command line
+
+Release archives for the `oxfer` binary (with man page and shell completions)
+are attached to each [release](https://github.com/alexander-cojocaru/oxfer/releases).
+Each release also includes a generated Homebrew formula, `oxfer.rb`: copy it
+into your own tap (`brew tap-new you/tap`, add it under `Formula/`) and run
+`brew install you/tap/oxfer`.
+
+From source (Rust toolchain required):
+
+```
+git clone https://github.com/alexander-cojocaru/oxfer
+cd oxfer
+cargo install --path crates/oxfer-cli
+```
+
+To build and install the desktop app from source on macOS (needs Node.js and
+`cargo install tauri-cli --version "^2" --locked`):
+
+```
+scripts/install-macos-app.sh                 # installs to /Applications
+scripts/install-macos-app.sh ~/Applications  # or another folder
+```
 
 ## Usage
 
@@ -47,44 +96,14 @@ oxfer ls @web:/var/www
 
 Common options: `-P <port>`, `-i <key>`, `--agent`, `--known-hosts <file>`.
 Without `-i`/`--agent`, oxfer tries the ssh-agent, then `~/.ssh/id_*`, then asks
-for a password.
-
-## Install
-
-Tagged releases publish binaries (with man page and shell completions) and a
-generated Homebrew formula `oxfer.rb` as release assets. Copy the formula into
-your own tap (`brew tap-new you/tap`, add `oxfer.rb` under `Formula/`), then
-`brew install you/tap/oxfer`. From source: `cargo install --path crates/oxfer-cli`.
-
-Desktop app on macOS: download `oxfer-<version>-macos-universal.dmg` from the
-release (Apple silicon and Intel), open it and drag oxfer to Applications. The
-app is signed with a self-signed certificate rather than an Apple Developer ID,
-so macOS blocks the first launch: open System Settings → Privacy & Security and
-click "Open Anyway" (or run `xattr -dr com.apple.quarantine /Applications/oxfer.app`).
-Updates are signed with the same certificate, so this is needed only once per
-download and keychain permissions carry over.
-
-Or build it from this checkout (needs Node.js and
-`cargo install tauri-cli --version "^2" --locked`):
-
-```
-scripts/install-macos-app.sh                 # build and install to /Applications
-scripts/install-macos-app.sh ~/Applications  # or another folder
-```
-
-Run it again after `git pull` to update; it quits a running oxfer first.
-
-The app is signed with a stable identity so macOS keeps keychain and folder
-permissions across updates: on first run the script creates a self-signed
-certificate "oxfer local signing" in your login keychain (set
-`OXFER_SIGN_IDENTITY` to use one of your own). Answer "Always Allow" to
-keychain prompts once and they stay answered.
+for a password. Run `oxfer --help` or `oxfer <command> --help` for everything
+else.
 
 ## Performance
 
 Loopback comparison against OpenSSH `sftp` (Apple silicon, release build,
-`cargo run --release -p oxfer-cli --example bench`; loopback measures client
-overhead, not network speed):
+`cargo run --release -p oxfer-cli --example bench`). Loopback measures client
+overhead, not network speed.
 
 | scenario | oxfer | sftp |
 |---|---|---|
@@ -93,82 +112,27 @@ overhead, not network speed):
 | upload 1000 × 4 KiB files | 0.41 s | 0.23 s |
 | download 1000 × 4 KiB files | 0.24 s | 0.27 s |
 
-Medians of three runs; the large upload occasionally takes up to 0.5 s.
-oxfer prefers AES-GCM where the CPU has AES instructions and keeps 64 SFTP
-requests in flight per file. Many small uploads are still slower than OpenSSH,
-because each file costs several round trips (stat, open, close, stat, rename).
+Medians of three runs. oxfer prefers AES-GCM where the CPU has AES instructions.
+Many small uploads are still slower than OpenSSH, because each file costs
+several round trips (stat, open, close, stat, rename).
 
-## Layout
+## Project layout
 
-- `crates/oxfer-core` – `RemoteFs` trait, `LocalFs`, errors, transfer engine
-- `crates/oxfer-sftp` – SFTP backend
-- `crates/oxfer-ftp` – FTP/FTPS backend
-- `crates/oxfer-cli` – the `oxfer` binary
-- `crates/oxfer-gui` / `ui/` – desktop app (Tauri)
-- `crates/oxfer-testutil` – throwaway `sshd` for integration tests
+- `crates/oxfer-core`: `RemoteFs` trait, `LocalFs`, errors, transfer engine
+- `crates/oxfer-sftp`: SFTP backend
+- `crates/oxfer-ftp`: FTP/FTPS backend
+- `crates/oxfer-config`: profiles, credentials, `ssh_config` parsing
+- `crates/oxfer-cli`: the `oxfer` binary (CLI, shell, TUI)
+- `crates/oxfer-gui` and `ui/`: desktop app (Tauri 2, Svelte 5)
+- `crates/oxfer-testutil`: throwaway `sshd` for integration tests
 
-## Development
+## Contributing
 
-```
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
-
-Integration tests start an unprivileged local `sshd` and skip themselves when
-`sshd` or `sftp-server` are not installed.
-
-### Desktop GUI
-
-The GUI is a Tauri 2 app (`crates/oxfer-gui`) with a Svelte 5 + TypeScript
-frontend (`ui/`). It is not a default workspace member because it needs the
-system webview (on Linux: `libwebkit2gtk-4.1-dev libsoup-3.0-dev
-libayatana-appindicator3-dev librsvg2-dev`).
-
-```
-cd ui && npm ci && npm test && npm run build   # builds ui/dist
-cargo run -p oxfer-gui                          # embeds ui/dist
-cargo test -p oxfer-gui                         # headless service tests
-```
-
-All session, file and transfer logic lives in `oxfer_gui::service` without
-Tauri types; `main.rs` only maps commands and events. Icons are generated by
-`python3 crates/oxfer-gui/icons/generate.py`.
-
-### Releasing
-
-Add a `## <version> - <date>` section to `CHANGELOG.md` first: its bullets
-become the release notes (the release fails without them). Then pushing a `v*`
-tag builds the CLI archives, the Homebrew formula and the macOS `.dmg`
-(`scripts/package-macos-dmg.sh` signs the app and builds the image).
-The `.dmg` job signs with the "oxfer local signing" certificate, so releases and
-local `install-macos-app.sh` builds share one identity. Set it up once:
-
-1. Keychain Access → login → My Certificates → right-click "oxfer local
-   signing" → Export… → save as `oxfer-signing.p12` with a password.
-2. Store it as repository secrets, then delete the file:
-
-   ```
-   base64 -i oxfer-signing.p12 | gh secret set MACOS_SIGNING_P12
-   gh secret set MACOS_SIGNING_P12_PASSWORD   # the export password
-   rm oxfer-signing.p12
-   ```
-
-The app updates itself: "Check for updates" in the status bar reads
-`latest.json` from the latest release, downloads the signed `.app.tar.gz` and
-verifies it against the public key in `crates/oxfer-gui/tauri.conf.json`.
-The release job needs the matching private key (generated once with
-`npx @tauri-apps/cli@2 signer generate -w ~/.tauri/oxfer-updater.key`):
-
-```
-gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/oxfer-updater.key
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD   # only if the key has a password
-```
-
-Keep a backup of the private key: without it, installed apps cannot verify
-(and therefore never accept) a new update, and the public key in
-`tauri.conf.json` would have to be replaced with a manual re-install.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md)
+for how to build, test and run the project. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-Dual-licensed under MIT or Apache-2.0, at your option.
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT), at your option.
