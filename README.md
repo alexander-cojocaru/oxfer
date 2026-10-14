@@ -34,6 +34,16 @@ The name is *oxide* (Rust) + *transfer*.
   preview of files (F3 or double-click) and editing in your own text editor
   (F4). A remote file is edited as a private local copy; every save is uploaded
   back, and the copy is removed when you disconnect.
+- **Remote screens (VNC)**: the desktop app can view and control a remote
+  screen, like `vnc://user:password@host` in the macOS Finder. Choose the
+  "VNC / Screen Sharing" protocol in a profile or in quick connect. The viewer is
+  built in (the [`oxfer-vnc`](crates/oxfer-vnc) crate) and supports no
+  authentication, VNC passwords and Apple Remote Desktop logins (the macOS
+  account name and password that Screen Sharing asks for), Raw, CopyRect,
+  Hextile and ZRLE encodings, keyboard, mouse and wheel, clipboard in both
+  directions and fit-to-window scaling. VNC itself is unencrypted apart from
+  the login: use it on a trusted network or through a tunnel. Not yet
+  supported: SSH tunnelling, VeNCrypt/TLS and the extended clipboard.
 
 ## Install
 

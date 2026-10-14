@@ -2,7 +2,7 @@
   import Modal from './Modal.svelte';
   import { api, errorMessage } from '../lib/api';
   import { t } from '../lib/i18n';
-  import type { AuthDto, Credential, Profile, QuickAuth, RemoteProtocol, SessionInfo } from '../lib/types';
+  import type { AuthDto, ConnectRequest, Credential, Profile, QuickAuth, RemoteProtocol, SessionInfo } from '../lib/types';
 
   type AuthChoice = QuickAuth | 'interactive';
 
@@ -13,6 +13,7 @@
     groups = [],
     credentials = [],
     onconnected,
+    onvnc,
     onsaved,
     onclose,
   }: {
@@ -26,11 +27,19 @@
     /** Saved credentials to choose from instead of entering user and auth. */
     credentials?: Credential[];
     onconnected?: (s: SessionInfo) => void;
+    /** A VNC connection opens a remote screen instead of a file session. */
+    onvnc?: (request: ConnectRequest, label: string) => void;
     onsaved?: (p: Profile) => void;
     onclose: () => void;
   } = $props();
 
-  const DEFAULT_PORTS: Record<RemoteProtocol, number> = { sftp: 22, ftp: 21, ftpsExplicit: 21, ftpsImplicit: 990 };
+  const DEFAULT_PORTS: Record<RemoteProtocol, number> = {
+    sftp: 22,
+    ftp: 21,
+    ftpsExplicit: 21,
+    ftpsImplicit: 990,
+    vnc: 5900,
+  };
 
   // svelte-ignore state_referenced_locally
   const initial = profile;
@@ -58,6 +67,7 @@
   let error = $state<string | null>(null);
 
   const isSftp = $derived(protocol === 'sftp');
+  const isVnc = $derived(protocol === 'vnc');
   const saving = $derived(mode === 'profile' || saveAsProfile);
   const authChoices = $derived.by((): { value: AuthChoice; label: string }[] => {
     if (isSftp) {
@@ -111,7 +121,7 @@
       port: port ? Number(port) : null,
       user: usesCredential ? null : user.trim() || null,
       auth: usesCredential ? { method: 'agent' } : profileAuth(),
-      remoteDir: remoteDir.trim() || null,
+      remoteDir: isVnc ? null : remoteDir.trim() || null,
       group: group.trim() || null,
       credential: usesCredential ? credential : null,
     };
@@ -135,8 +145,26 @@
           onclose();
           return;
         }
-        const s = await api.connect({ kind: 'profile', name: saved.name });
-        onconnected?.(s);
+        if (isVnc) {
+          onvnc?.({ kind: 'profile', name: saved.name }, saved.name);
+        } else {
+          onconnected?.(await api.connect({ kind: 'profile', name: saved.name }));
+        }
+      } else if (isVnc) {
+        const who = usesCredential ? credential : user.trim();
+        onvnc?.(
+          {
+            kind: 'quick',
+            protocol,
+            host: host.trim(),
+            port: port ? Number(port) : null,
+            user: user.trim() || null,
+            auth: 'password',
+            password: password || null,
+            ...(usesCredential ? { credential } : {}),
+          },
+          who && !usesCredential ? `${who}@${host.trim()}` : host.trim(),
+        );
       } else {
         const s = await api.connect({
           kind: 'quick',
@@ -189,6 +217,7 @@
         <option value="ftpsExplicit">FTPS (explicit TLS)</option>
         <option value="ftpsImplicit">FTPS (implicit TLS)</option>
         <option value="ftp">FTP (unencrypted)</option>
+        <option value="vnc">{t('vncOption')}</option>
       </select>
     </label>
     <label class="field">
@@ -225,7 +254,7 @@
     {#if !usesCredential}
       <label class="field">
         <span>{t('user')}</span>
-        <input bind:value={user} spellcheck="false" autocomplete="off" placeholder={isSftp ? '' : 'anonymous'} />
+        <input bind:value={user} spellcheck="false" autocomplete="off" placeholder={isSftp || isVnc ? '' : 'anonymous'} />
       </label>
       <label class="field">
         <span>{t('authentication')}</span>
@@ -247,14 +276,18 @@
             <span>{t('password')}</span>
             <input type="password" bind:value={password} autocomplete="off" aria-describedby="password-hint" />
           </label>
-          <small id="password-hint" class="hint">{saving ? t('passwordStoredHint') : t('passwordOnceHint')}</small>
+          <small id="password-hint" class="hint">{saving ? t('passwordStoredHint') : isVnc ? t('vncPasswordHint') : t('passwordOnceHint')}</small>
         </div>
       {/if}
     {/if}
-    <label class="field wide">
-      <span>{t('remoteDir')}</span>
-      <input bind:value={remoteDir} class="mono" spellcheck="false" placeholder="~" />
-    </label>
+    {#if isVnc}
+      <p class="hint wide">{t('vncUserHint')}</p>
+    {:else}
+      <label class="field wide">
+        <span>{t('remoteDir')}</span>
+        <input bind:value={remoteDir} class="mono" spellcheck="false" placeholder="~" />
+      </label>
+    {/if}
     {#if protocol === 'ftp'}
       <p class="warn wide" role="note">{t('plainFtpWarning')}</p>
     {/if}
