@@ -69,6 +69,8 @@ const en = {
   save: 'Save',
   cancel: 'Cancel',
   close: 'Close',
+  changelog: 'Changelog',
+  changelogEmpty: 'No changelog entries.',
   ok: 'OK',
   connecting: 'Connecting…',
   connected: 'Connected to {label}',

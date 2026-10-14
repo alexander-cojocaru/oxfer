@@ -110,6 +110,11 @@ jobs:
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir archives
           scripts/gen-formula.sh "$GITHUB_REPOSITORY" "${GITHUB_REF_NAME#v}" archives > oxfer.rb
           cat oxfer.rb
+      # Release notes come from the CHANGELOG.md section of the tag; the step
+      # fails when there is none, so every release has to be described.
+      - name: Extract release notes from CHANGELOG.md
+        run: scripts/release-notes.sh "$GITHUB_REF_NAME" | tee release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           files: oxfer.rb
+          body_path: release-notes.md
