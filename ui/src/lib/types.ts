@@ -153,3 +153,13 @@ export interface FilePreview {
   truncated: boolean;
   size: number;
 }
+
+export interface UpdateInfo {
+  version: string;
+  /** Release notes (the CHANGELOG section of the release). */
+  notes: string | null;
+}
+
+export type UpdateProgress =
+  | { kind: 'downloading'; received: number; total: number | null }
+  | { kind: 'installing' };

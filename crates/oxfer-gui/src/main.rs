@@ -11,7 +11,9 @@ use oxfer_gui::service::{
     ProfileStore, PromptAnswer, PromptBroker, PromptEvent, Prompter, SecretString, ServiceError,
     SessionInfo, SessionManager, TerminalEvent, TerminalSink, TransferEvent, TransferRequest,
 };
-use tauri::{Emitter, Manager, State};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_updater::{Update, UpdaterExt};
 use tracing_subscriber::EnvFilter;
 
 type CmdResult<T> = Result<T, ServiceError>;
@@ -22,10 +24,87 @@ struct AppState {
     terminals: Arc<dyn TerminalSink>,
 }
 
+/// The update found by the last `check_for_update`, waiting for `install_update`.
+#[derive(Default)]
+struct PendingUpdate(std::sync::Mutex<Option<Update>>);
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    notes: Option<String>,
+}
+
+/// Download progress sent to the UI while an update is installed.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+enum UpdateProgress {
+    Downloading { received: u64, total: Option<u64> },
+    Installing,
+}
+
+fn update_error(e: impl std::fmt::Display) -> ServiceError {
+    ServiceError::new("update", e.to_string())
+}
+
 impl AppState {
     fn prompter(&self) -> Arc<dyn Prompter> {
         self.broker.clone()
     }
+}
+
+#[tauri::command]
+async fn check_for_update(
+    app: AppHandle,
+    pending: State<'_, PendingUpdate>,
+) -> CmdResult<Option<UpdateInfo>> {
+    let update = app
+        .updater()
+        .map_err(update_error)?
+        .check()
+        .await
+        .map_err(update_error)?;
+    let info = update.as_ref().map(|u| UpdateInfo {
+        version: u.version.clone(),
+        notes: u.body.clone(),
+    });
+    *pending.0.lock().unwrap() = update;
+    Ok(info)
+}
+
+/// Downloads and installs the update found by `check_for_update`; the UI then
+/// calls `restart_app`. The download is verified against the configured
+/// public key before anything is replaced.
+#[tauri::command]
+async fn install_update(
+    pending: State<'_, PendingUpdate>,
+    on_progress: Channel<UpdateProgress>,
+) -> CmdResult<()> {
+    let update = pending
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| update_error("no update available, check for updates first"))?;
+    let mut received = 0u64;
+    let progress = on_progress.clone();
+    update
+        .download_and_install(
+            move |chunk, total| {
+                received += chunk as u64;
+                let _ = progress.send(UpdateProgress::Downloading { received, total });
+            },
+            move || {
+                let _ = on_progress.send(UpdateProgress::Installing);
+            },
+        )
+        .await
+        .map_err(update_error)
+}
+
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    app.restart()
 }
 
 #[tauri::command]
@@ -266,6 +345,8 @@ fn main() {
     init_tracing();
     tracing::info!("oxfer-gui starting");
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate::default())
         .setup(setup)
         .invoke_handler(tauri::generate_handler![
             list_sessions,
@@ -296,6 +377,9 @@ fn main() {
             terminal_resize,
             close_terminal,
             answer_prompt,
+            check_for_update,
+            install_update,
+            restart_app,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {
