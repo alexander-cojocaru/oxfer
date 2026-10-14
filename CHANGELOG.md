@@ -3,6 +3,11 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.5.0 - 2026-10-14
+
+- The app can update itself: click "Check for updates" in the status bar to
+  download and install the latest release (macOS).
+
 ## 0.4.1 - 2026-10-14
 
 - The changelog can be viewed in the app (click the version in the status bar).
