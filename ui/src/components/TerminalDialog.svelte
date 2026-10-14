@@ -30,6 +30,13 @@
     term.open(host);
     fit.fit();
     term.focus();
+    // Esc closes the window instead of going to the shell (xterm swallows it
+    // before it can bubble to the dialog).
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== 'Escape') return true;
+      if (e.type === 'keydown') onclose();
+      return false;
+    });
 
     let id: number | null = null;
     let disposed = false;
