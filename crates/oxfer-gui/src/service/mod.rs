@@ -17,7 +17,7 @@ pub use dto::{EntryDto, EntryKindDto, ProtocolDto, SessionInfo};
 pub use editor::{system_opener, FilePreview, Opener, EDIT_LIMIT, PREVIEW_LIMIT};
 pub use error::{ServiceError, ServiceResult};
 pub use manager::{SessionManager, LOCAL_SESSION};
-pub use profiles::{AuthDto, CredentialDto, ProfileDto, ProfileStore};
+pub use profiles::{AuthDto, CredentialDto, ImportDto, ProfileDto, ProfileStore};
 pub use prompt::{
     ConflictChoice, HostKeyChoice, Prompt, PromptAnswer, PromptBroker, PromptEvent, Prompter,
     ScriptedPrompter, SecretKind, SecretString,

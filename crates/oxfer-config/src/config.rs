@@ -6,6 +6,17 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// What [`Config::merge`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MergeReport {
+    /// Names of profiles and credentials that were new.
+    pub added: Vec<String>,
+    /// Names that already existed and were replaced (`overwrite`).
+    pub replaced: Vec<String>,
+    /// Names that already existed and were left alone.
+    pub skipped: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
@@ -90,6 +101,47 @@ impl Config {
             let _ = std::fs::remove_file(&tmp);
             io(e)
         })
+    }
+
+    /// Merge the credentials and profiles of `other` (e.g. an exported file)
+    /// into `self`. Existing names are kept unless `overwrite`. Secrets are
+    /// never part of a config, so imported password entries have none yet.
+    pub fn merge(&mut self, other: &Config, overwrite: bool) -> Result<MergeReport> {
+        let mut report = MergeReport::default();
+        for c in &other.credentials {
+            match self.credentials.iter().position(|x| x.name == c.name) {
+                None => {
+                    self.add_credential(c.clone())?;
+                    report.added.push(c.name.clone());
+                }
+                Some(i) if overwrite => {
+                    c.validate()?;
+                    self.credentials[i] = c.clone();
+                    report.replaced.push(c.name.clone());
+                }
+                Some(_) => report.skipped.push(c.name.clone()),
+            }
+        }
+        for p in &other.profiles {
+            if let Some(name) = &p.credential {
+                if self.credential(name).is_none() {
+                    return Err(Error::UnknownCredential(name.clone()));
+                }
+            }
+            match self.profiles.iter().position(|x| x.name == p.name) {
+                None => {
+                    self.add(p.clone())?;
+                    report.added.push(p.name.clone());
+                }
+                Some(i) if overwrite => {
+                    p.validate()?;
+                    self.profiles[i] = p.clone();
+                    report.replaced.push(p.name.clone());
+                }
+                Some(_) => report.skipped.push(p.name.clone()),
+            }
+        }
+        Ok(report)
     }
 
     pub fn list(&self) -> &[Profile] {
@@ -198,6 +250,26 @@ impl Config {
 mod tests {
     use super::*;
     use crate::profile::{AuthMethod, Protocol};
+
+    #[test]
+    fn merge_adds_skips_and_overwrites() {
+        let mut a = Config::default();
+        a.add(p("a")).unwrap();
+        let mut b = Config::default();
+        let mut a2 = p("a");
+        a2.host = "other".into();
+        b.add(a2).unwrap();
+        b.add(p("b")).unwrap();
+
+        let r = a.merge(&b, false).unwrap();
+        assert_eq!((r.added, r.skipped), (vec!["b".into()], vec!["a".into()]));
+        assert_ne!(a.get("a").unwrap().host, "other");
+
+        let r = a.merge(&b, true).unwrap();
+        assert_eq!(r.replaced.len(), 2);
+        assert_eq!(a.get("a").unwrap().host, "other");
+        assert_eq!(a.list().len(), 2);
+    }
 
     fn p(name: &str) -> Profile {
         Profile::new(name, Protocol::Sftp, "example.com", AuthMethod::Agent)

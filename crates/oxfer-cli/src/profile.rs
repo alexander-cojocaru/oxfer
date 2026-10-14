@@ -68,6 +68,15 @@ pub enum Action {
     },
     /// Remove a profile (and its stored password)
     Rm { name: String },
+    /// Write all profiles and credentials to a file (passwords are never included)
+    Export { file: PathBuf },
+    /// Merge profiles and credentials from an exported file
+    Import {
+        file: PathBuf,
+        /// Replace existing profiles/credentials of the same name
+        #[arg(long)]
+        overwrite: bool,
+    },
 }
 
 /// Commands of `oxfer credential`.
@@ -160,6 +169,30 @@ pub fn run(action: &Action) -> Result<()> {
                 let indent = if p.group.is_some() { "  " } else { "" };
                 println!("{indent}{}", describe(p));
             }
+        }
+        Action::Export { file } => {
+            config.save_to(file)?;
+            println!(
+                "exported {} profiles and {} credentials to {} (without passwords)",
+                config.list().len(),
+                config.credentials().len(),
+                file.display()
+            );
+        }
+        Action::Import { file, overwrite } => {
+            if !file.exists() {
+                bail!("{} does not exist", file.display());
+            }
+            let incoming = Config::load_from(file)?;
+            let report = config.merge(&incoming, *overwrite)?;
+            config.save()?;
+            println!(
+                "imported: {} added, {} replaced, {} skipped (already exist; use --overwrite)",
+                report.added.len(),
+                report.replaced.len(),
+                report.skipped.len()
+            );
+            println!("passwords are not exported: set them again for password logins");
         }
         Action::Show { name } => match config.get(name) {
             Some(p) => {

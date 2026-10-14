@@ -725,6 +725,7 @@ async fn sftp_end_to_end_with_host_key_prompt() {
                 credential: None,
             },
             None,
+            None,
         )
         .unwrap();
     let prompter = ScriptedPrompter::new([]);
@@ -829,6 +830,7 @@ async fn sftp_end_to_end_with_host_key_prompt() {
                 group: None,
                 credential: Some("testkey".into()),
             },
+            None,
             None,
         )
         .unwrap();

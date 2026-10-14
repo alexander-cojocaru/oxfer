@@ -13,6 +13,8 @@
     onconnectprofile,
     onnewprofile,
     oneditprofile,
+    onduplicateprofile,
+    onconfigtransfer,
     onnewcredential,
     oneditcredential,
     ondisconnect,
@@ -23,6 +25,8 @@
     onconnectprofile: (p: Profile) => void;
     onnewprofile: () => void;
     oneditprofile: (p: Profile) => void;
+    onduplicateprofile: (p: Profile) => void;
+    onconfigtransfer: (mode: 'export' | 'import') => void;
     onnewcredential: () => void;
     oneditcredential: (c: Credential) => void;
     ondisconnect: (s: SessionInfo) => void;
@@ -189,6 +193,7 @@
       'separator',
       { label: `${t('moveProfile')}…`, action: () => (moving = p.name) },
       { label: `${t('editProfile')}…`, action: () => oneditprofile(p) },
+      { label: `${t('duplicateProfile')}…`, action: () => onduplicateprofile(p) },
       'separator',
       { label: `${t('deleteProfile')}…`, action: () => (confirmDelete = p), danger: true },
     );
@@ -231,6 +236,24 @@
         <span class="count">{app.profiles.length}</span>
       </button>
     </h3>
+    <button
+      type="button"
+      class="btn icon ghost"
+      aria-label={t('moreActions')}
+      title={t('moreActions')}
+      aria-haspopup="menu"
+      onclick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        menu = {
+          x: r.left,
+          y: r.bottom,
+          items: [
+            { label: `${t('importProfiles')}…`, action: () => onconfigtransfer('import') },
+            { label: `${t('exportProfiles')}…`, action: () => onconfigtransfer('export') },
+          ],
+        };
+      }}>⋯</button
+    >
     <button type="button" class="btn icon ghost" aria-label={t('newProfile')} title={t('newProfile')} onclick={onnewprofile}>
       <Icon name="plus" size={14} />
     </button>
