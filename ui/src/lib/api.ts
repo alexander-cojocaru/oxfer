@@ -1,7 +1,7 @@
 // The only module that talks to the Tauri backend. Components import `api`
 // from here, so tests can replace it with `vi.mock('../lib/api')`.
 
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   ConnectRequest,
@@ -17,6 +17,8 @@ import type {
   TerminalEvent,
   TransferEvent,
   TransferRequest,
+  UpdateInfo,
+  UpdateProgress,
 } from './types';
 
 export const api = {
@@ -60,6 +62,16 @@ export const api = {
   closeTerminal: (id: number) => invoke<void>('close_terminal', { id }),
 
   answerPrompt: (id: number, answer: PromptAnswer) => invoke<void>('answer_prompt', { id, answer }),
+
+  /** Resolves to `null` when the app is up to date. */
+  checkForUpdate: () => invoke<UpdateInfo | null>('check_for_update'),
+  /** Downloads and installs the update found by `checkForUpdate`; call `restartApp` afterwards. */
+  installUpdate: (onProgress: (p: UpdateProgress) => void) => {
+    const channel = new Channel<UpdateProgress>();
+    channel.onmessage = onProgress;
+    return invoke<void>('install_update', { onProgress: channel });
+  },
+  restartApp: () => invoke<void>('restart_app'),
 
   onTransferEvent: (cb: (e: TransferEvent) => void): Promise<UnlistenFn> =>
     listen<TransferEvent>('transfer-event', (e) => cb(e.payload)),
