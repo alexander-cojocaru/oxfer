@@ -3,6 +3,15 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.6.0 - 2026-10-14
+
+- Duplicate a profile: right-click a profile and choose "Duplicate profile…".
+  Everything is copied (including a stored password); change the name and host
+  before saving.
+- Export and import profiles: the "⋯" menu in the sidebar (or
+  `oxfer profile export` / `oxfer profile import`) writes your profiles and
+  credentials to a file and merges them back in. Passwords are never exported.
+
 ## 0.5.0 - 2026-10-14
 
 - The app can update itself: click "Check for updates" in the status bar to
