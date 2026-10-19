@@ -3,6 +3,10 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.6.3 - 2026-10-19
+
+- Release pipeline fix (Homebrew formula step); no changes to the app itself.
+
 ## 0.6.2 - 2026-10-19
 
 - Release pipeline fix (Homebrew formula step); no changes to the app itself.

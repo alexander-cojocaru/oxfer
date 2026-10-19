@@ -168,13 +168,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Render Homebrew formula from the published archives
-        # The self-hosted runner has no gh CLI, so fetch the archives with curl.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir archives
-          for triple in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu; do
-            f="oxfer-$GITHUB_REF_NAME-$triple.tar.gz"
-            curl -fsSL --retry 3 -o "archives/$f" "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$f"
-          done
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.tar.gz' --dir archives
           scripts/gen-formula.sh "$GITHUB_REPOSITORY" "${GITHUB_REF_NAME#v}" archives > oxfer.rb
           cat oxfer.rb
       # Release notes come from the CHANGELOG.md section of the tag; the step
