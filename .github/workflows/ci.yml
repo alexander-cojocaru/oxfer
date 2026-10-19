@@ -13,8 +13,8 @@ jobs:
   check:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: [linux, macos]
+    runs-on: ${{ matrix.os == 'linux' && fromJSON('["self-hosted","linux","x64"]') || fromJSON('["self-hosted","macOS"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install keyring dependencies
@@ -32,8 +32,8 @@ jobs:
   gui:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: [linux, macos]
+    runs-on: ${{ matrix.os == 'linux' && fromJSON('["self-hosted","linux","x64"]') || fromJSON('["self-hosted","macOS"]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Install webview dependencies
@@ -58,3 +58,17 @@ jobs:
         working-directory: ui
       - run: cargo clippy -p oxfer-gui --all-targets -- -D warnings
       - run: cargo test -p oxfer-gui
+
+  # No Windows runner is available: type-check and lint the Windows target by
+  # cross-compiling on the Linux runner (tests cannot run there).
+  windows:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - run: command -v cargo-xwin >/dev/null || cargo install --locked cargo-xwin
+      - run: cargo xwin clippy --workspace --exclude oxfer-gui --all-targets --target x86_64-pc-windows-msvc --xwin-accept-license

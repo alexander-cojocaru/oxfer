@@ -8,47 +8,86 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: tar.gz }
-          - { os: macos-latest, target: x86_64-apple-darwin, ext: tar.gz }
-          - { os: macos-latest, target: aarch64-apple-darwin, ext: tar.gz }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: zip }
-    runs-on: ${{ matrix.os }}
+  # No GitHub-hosted runners are used (minutes are exhausted): Linux and
+  # Windows archives build on the self-hosted Linux x64 runner (Windows via
+  # cargo-xwin), macOS ones on the self-hosted macOS runner.
+  build-linux:
+    runs-on: [self-hosted, linux, x64]
+    env:
+      TARGETS: x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v4
       - name: Install keyring dependencies
-        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release -p oxfer-cli --target ${{ matrix.target }}
-      - name: Package
-        shell: bash
+      - name: Install cargo-xwin
+        run: command -v cargo-xwin >/dev/null || cargo install --locked cargo-xwin
+      - name: Build
         run: |
-          name="oxfer-${GITHUB_REF_NAME}-${{ matrix.target }}"
-          mkdir "$name"
-          bin=oxfer; [ "${{ matrix.os }}" = windows-latest ] && bin=oxfer.exe
-          cp "target/${{ matrix.target }}/release/$bin" README.md LICENSE-MIT LICENSE-APACHE "$name/"
-          # shell completions and man page generated from the built binary
-          if [ "${{ matrix.os }}" != windows-latest ]; then
-            mkdir -p "$name/completions"
-            for sh in bash zsh fish; do "$name/$bin" completions $sh > "$name/completions/oxfer.$sh"; done
-            "$name/$bin" man > "$name/oxfer.1"
-          fi
-          if [ "${{ matrix.ext }}" = zip ]; then 7z a "$name.zip" "$name"; else tar czf "$name.tar.gz" "$name"; fi
-          echo "ASSET=$name.${{ matrix.ext }}" >> "$GITHUB_ENV"
+          cargo build --release -p oxfer-cli --target x86_64-unknown-linux-gnu
+          cargo xwin build --release -p oxfer-cli --target x86_64-pc-windows-msvc --xwin-accept-license
+      - name: Package
+        run: |
+          native="target/x86_64-unknown-linux-gnu/release/oxfer"
+          mkdir -p extras/completions
+          for sh in bash zsh fish; do "$native" completions $sh > "extras/completions/oxfer.$sh"; done
+          "$native" man > extras/oxfer.1
+          for target in $TARGETS; do
+            name="oxfer-${GITHUB_REF_NAME}-$target"
+            mkdir "$name"
+            case "$target" in
+              *windows*) cp "target/$target/release/oxfer.exe" "$name/" ;;
+              *) cp "target/$target/release/oxfer" "$name/"; cp -r extras/completions extras/oxfer.1 "$name/" ;;
+            esac
+            cp README.md LICENSE-MIT LICENSE-APACHE "$name/"
+            case "$target" in
+              *windows*) python3 -m zipfile -c "$name.zip" "$name" ;;
+              *) tar czf "$name.tar.gz" "$name" ;;
+            esac
+          done
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.ASSET }}
+          files: |
+            oxfer-*.tar.gz
+            oxfer-*.zip
+
+  build-macos:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: |
+          cargo build --release -p oxfer-cli --target x86_64-apple-darwin
+          cargo build --release -p oxfer-cli --target aarch64-apple-darwin
+      - name: Package
+        run: |
+          # Completions and the man page are platform independent: generate
+          # them once from the binary matching this machine's architecture.
+          host="$(uname -m)"; [ "$host" = arm64 ] && host=aarch64
+          native="target/$host-apple-darwin/release/oxfer"
+          mkdir -p extras/completions
+          for sh in bash zsh fish; do "$native" completions $sh > "extras/completions/oxfer.$sh"; done
+          "$native" man > extras/oxfer.1
+          for target in x86_64-apple-darwin aarch64-apple-darwin; do
+            name="oxfer-${GITHUB_REF_NAME}-$target"
+            mkdir "$name"
+            cp "target/$target/release/oxfer" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+            cp -r extras/completions extras/oxfer.1 "$name/"
+            tar czf "$name.tar.gz" "$name"
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: oxfer-*-apple-darwin.tar.gz
 
   macos-app:
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -117,10 +156,15 @@ jobs:
             ${{ env.ASSET }}
             ${{ env.UPDATER_ASSET }}
             latest.json
+      # The runner is a personal Mac: do not leave the temporary keychain behind.
+      - name: Remove the temporary signing keychain
+        if: always()
+        run: |
+          [ -n "$OXFER_SIGN_KEYCHAIN" ] && security delete-keychain "$OXFER_SIGN_KEYCHAIN" || true
 
   formula:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos]
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - name: Render Homebrew formula from the published archives
