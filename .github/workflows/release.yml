@@ -24,9 +24,11 @@ jobs:
       - name: Install cargo-xwin
         run: command -v cargo-xwin >/dev/null || cargo install --locked cargo-xwin
       - name: Build
+        env:
+          XWIN_ACCEPT_LICENSE: "1"
         run: |
           cargo build --release -p oxfer-cli --target x86_64-unknown-linux-gnu
-          cargo xwin build --release -p oxfer-cli --target x86_64-pc-windows-msvc --xwin-accept-license
+          cargo xwin build --release -p oxfer-cli --target x86_64-pc-windows-msvc
       - name: Package
         run: |
           native="target/x86_64-unknown-linux-gnu/release/oxfer"

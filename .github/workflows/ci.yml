@@ -63,4 +63,6 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - run: command -v cargo-xwin >/dev/null || cargo install --locked cargo-xwin
-      - run: cargo xwin clippy --workspace --exclude oxfer-gui --all-targets --target x86_64-pc-windows-msvc --xwin-accept-license
+      - run: cargo xwin clippy --workspace --exclude oxfer-gui --all-targets --target x86_64-pc-windows-msvc
+        env:
+          XWIN_ACCEPT_LICENSE: "1"
