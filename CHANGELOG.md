@@ -3,6 +3,12 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.7.1 - 2026-10-20
+
+- Fixed in-app updates failing with "failed to unpack `._oxfer.app`": the update
+  archive no longer contains macOS metadata files. Updating from 0.7.0 may still
+  hit this error once; install 0.7.1 from the .dmg in that case.
+
 ## 0.7.0 - 2026-10-20
 
 - VNC support: a new "VNC" protocol in the connection dialog (VNC and Apple
