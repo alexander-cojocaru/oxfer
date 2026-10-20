@@ -729,6 +729,8 @@ fn create_private_dir(dir: &Path) -> ServiceResult<()> {
     let mut b = std::fs::DirBuilder::new();
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    #[cfg(not(unix))]
+    let _ = &mut b;
     b.create(dir)?;
     Ok(())
 }

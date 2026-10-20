@@ -133,8 +133,9 @@ jobs:
           scripts/package-macos-dmg.sh target/universal-apple-darwin/release/bundle/macos/oxfer.app "$dmg"
           echo "ASSET=$dmg" >> "$GITHUB_ENV"
       # The in-app updater downloads the signed app as .app.tar.gz and verifies
-      # it against the public key in tauri.conf.json (see README, "Releasing").
-      - name: Build the updater archive and manifest
+      # it against the public key in tauri.conf.json (see README, "Releasing"); the
+      # `updater` job publishes latest.json once every platform has uploaded its archive.
+      - name: Build the updater archive
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -148,21 +149,87 @@ jobs:
           # entries, which the updater fails to unpack.
           COPYFILE_DISABLE=1 tar -czf "$archive" -C target/universal-apple-darwin/release/bundle/macos oxfer.app
           npx --yes @tauri-apps/cli@2 signer sign "$archive"
-          scripts/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
-          scripts/gen-latest-json.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$archive" "$archive.sig" release-notes.md > latest.json
-          cat latest.json
           echo "UPDATER_ASSET=$archive" >> "$GITHUB_ENV"
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ASSET }}
             ${{ env.UPDATER_ASSET }}
-            latest.json
+            ${{ env.UPDATER_ASSET }}.sig
       # The runner is a personal Mac: do not leave the temporary keychain behind.
       - name: Remove the temporary signing keychain
         if: always()
         run: |
           [ -n "$OXFER_SIGN_KEYCHAIN" ] && security delete-keychain "$OXFER_SIGN_KEYCHAIN" || true
+
+  windows-app:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-xwin
+        run: command -v cargo-xwin >/dev/null || cargo install --locked cargo-xwin
+      # Tauri builds the installer with NSIS (`makensis`), plus clang/lld for
+      # the cross-compile: apt-get install nsis lld llvm clang
+      - name: Check the build tools
+        run: command -v makensis && { command -v lld-link || command -v lld; }
+      - name: Build the frontend
+        working-directory: ui
+        run: npm ci && npm run build
+      - name: Build the installer
+        working-directory: crates/oxfer-gui
+        env:
+          XWIN_ACCEPT_LICENSE: "1"
+        run: npx --yes @tauri-apps/cli@2 build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Sign and package
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::secret TAURI_SIGNING_PRIVATE_KEY is not set (see README, Releasing)"
+            exit 1
+          fi
+          installer="oxfer-${GITHUB_REF_NAME}-windows-x64-setup.exe"
+          cp target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe "$installer"
+          # The in-app updater runs this installer and verifies its signature.
+          npx --yes @tauri-apps/cli@2 signer sign "$installer"
+          echo "INSTALLER=$installer" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.INSTALLER }}
+            ${{ env.INSTALLER }}.sig
+
+  updater:
+    needs: [macos-app, windows-app]
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build latest.json from the uploaded archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir updater
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir updater \
+            --pattern '*.app.tar.gz' --pattern '*.app.tar.gz.sig' \
+            --pattern '*-setup.exe' --pattern '*-setup.exe.sig'
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
+          scripts/gen-latest-json.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" release-notes.md \
+            "darwin-aarch64,darwin-x86_64=updater/oxfer-${GITHUB_REF_NAME}-macos-universal.app.tar.gz" \
+            "windows-x86_64=updater/oxfer-${GITHUB_REF_NAME}-windows-x64-setup.exe" > latest.json
+          cat latest.json
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
 
   formula:
     needs: [build-linux, build-macos]
