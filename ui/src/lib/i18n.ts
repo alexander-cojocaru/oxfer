@@ -8,6 +8,7 @@ const en = {
   quickConnect: 'Quick connect',
   disconnect: 'Disconnect',
   openTerminal: 'Open terminal',
+  openScreen: 'Open screen (VNC)',
   terminalTitle: 'Terminal: {name}',
   terminalEnded: 'session ended',
   connections: 'Connections',

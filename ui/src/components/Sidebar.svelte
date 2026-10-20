@@ -20,6 +20,7 @@
     ondisconnect,
     onterminal,
     onprofileterminal,
+    onprofilescreen,
   }: {
     connecting: string | null;
     onconnectprofile: (p: Profile) => void;
@@ -32,6 +33,8 @@
     ondisconnect: (s: SessionInfo) => void;
     onterminal: (s: SessionInfo) => void;
     onprofileterminal: (p: Profile) => void;
+    /** Opens the screen (VNC) of a file profile's host. */
+    onprofilescreen: (p: Profile) => void;
   } = $props();
 
   let confirmDelete = $state<Profile | null>(null);
@@ -189,6 +192,9 @@
     if (p.protocol === 'sftp') {
       items.push({ label: t('openTerminal'), action: () => onprofileterminal(p), disabled: busy });
     }
+    if (p.protocol !== 'vnc') {
+      items.push({ label: t('openScreen'), action: () => onprofilescreen(p), disabled: busy });
+    }
     items.push(
       'separator',
       { label: `${t('moveProfile')}…`, action: () => (moving = p.name) },
@@ -343,6 +349,18 @@
                 </span>
                 {#if connecting === p.name}<span class="spinner" aria-label={t('connecting')}></span>{/if}
               </button>
+              {#if p.protocol !== 'vnc'}
+                <button
+                  type="button"
+                  class="btn icon ghost screen"
+                  disabled={connecting !== null}
+                  aria-label="{t('openScreen')} {p.name}"
+                  title={t('openScreen')}
+                  onclick={() => onprofilescreen(p)}
+                >
+                  <Icon name="monitor" size={14} />
+                </button>
+              {/if}
             </li>
             {#if moving === p.name}
               <li class="move">
