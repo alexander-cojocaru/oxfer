@@ -140,6 +140,21 @@
     vnc = { request, label };
   }
 
+  // The screen of a file profile's host: a quick VNC connection to it.
+  function profileScreen(p: Profile) {
+    openVnc(
+      {
+        kind: 'quick',
+        protocol: 'vnc',
+        host: p.host,
+        user: p.credential ? null : p.user,
+        credential: p.credential,
+        auth: 'auto',
+      },
+      p.name,
+    );
+  }
+
   async function connectProfile(p: Profile) {
     if (connecting) return;
     // A remote screen has no file session: the viewer connects itself.
@@ -323,6 +338,7 @@
       ondisconnect={disconnect}
       onterminal={(s) => (terminal = s)}
       onprofileterminal={profileTerminal}
+      onprofilescreen={profileScreen}
     />
     <div class="vsplit">
       <Splitter

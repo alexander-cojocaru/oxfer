@@ -44,6 +44,7 @@ function renderSidebar() {
       ondisconnect: vi.fn(),
       onterminal,
       onprofileterminal,
+      onprofilescreen: vi.fn(),
     },
   });
   return { onconnectprofile, oneditcredential, onterminal, onprofileterminal, oneditprofile };
@@ -161,7 +162,7 @@ describe('Sidebar profile menu', () => {
     await user.keyboard('{Escape}');
 
     await rightClick('web');
-    expect(menuItems()).toEqual(['Connect', 'Open terminal', 'Move to group…', 'Edit profile…', 'Duplicate profile…', 'Delete profile…']);
+    expect(menuItems()).toEqual(['Connect', 'Open terminal', 'Open screen (VNC)', 'Move to group…', 'Edit profile…', 'Duplicate profile…', 'Delete profile…']);
     await user.click(screen.getByRole('menuitem', { name: 'Open terminal' }));
     expect(onprofileterminal).toHaveBeenCalledWith(app.profiles[0]);
     expect(screen.queryByRole('menu')).toBeNull();

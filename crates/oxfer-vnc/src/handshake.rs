@@ -41,14 +41,16 @@ fn parse_version(banner: &[u8; 12]) -> Result<u32> {
         .ok_or_else(|| Error::protocol("not a VNC server (bad version banner)"))?;
     let major: u32 = text[4..7].parse().unwrap_or(0);
     let minor: u32 = text[8..11].parse().unwrap_or(0);
-    if major != 3 {
+    // A newer major version (recent macOS announces "005.000") is answered
+    // with the newest one we speak, as the RFB specification asks.
+    if major < 3 {
         return Err(Error::Unsupported(format!(
             "RFB protocol version {major}.{minor}"
         )));
     }
-    Ok(match minor {
-        0..=6 => 3,
-        7 => 7,
+    Ok(match (major, minor) {
+        (3, 0..=6) => 3,
+        (3, 7) => 7,
         _ => 8,
     })
 }
@@ -361,7 +363,8 @@ mod tests {
         assert_eq!(parse_version(&banner("RFB 003.889\n")).unwrap(), 8);
         assert_eq!(parse_version(&banner("RFB 003.007\n")).unwrap(), 7);
         assert_eq!(parse_version(&banner("RFB 003.003\n")).unwrap(), 3);
-        assert!(parse_version(&banner("RFB 004.001\n")).is_err());
+        assert_eq!(parse_version(&banner("RFB 005.000\n")).unwrap(), 8);
+        assert!(parse_version(&banner("RFB 002.000\n")).is_err());
         assert!(parse_version(&banner("SSH-2.0-Open")).is_err());
     }
 }
