@@ -1,7 +1,7 @@
 {
   "name": "oxfer-ui",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.7.2",
   "type": "module",
   "description": "oxfer desktop frontend (Svelte 5 + TypeScript, runs inside Tauri 2)",
   "scripts": {

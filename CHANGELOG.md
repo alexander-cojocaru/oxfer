@@ -3,6 +3,13 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.7.2 - 2026-10-20
+
+- Fixed VNC failing with "unsupported: RFB protocol version 5.0" against recent
+  macOS Screen Sharing.
+- SFTP and FTP profiles get an "Open screen (VNC)" button (also in the
+  right-click menu) that opens the screen of the same host.
+
 ## 0.7.1 - 2026-10-20
 
 - Fixed in-app updates failing with "failed to unpack `._oxfer.app`": the update
