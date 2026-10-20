@@ -15,7 +15,7 @@ export interface Entry {
   permissions: number | null;
 }
 
-export type RemoteProtocol = 'sftp' | 'ftp' | 'ftpsExplicit' | 'ftpsImplicit';
+export type RemoteProtocol = 'sftp' | 'ftp' | 'ftpsExplicit' | 'ftpsImplicit' | 'vnc';
 export type Protocol = 'local' | RemoteProtocol;
 
 export interface SessionInfo {
@@ -69,6 +69,16 @@ export interface QuickConnect {
 }
 
 export type ConnectRequest = { kind: 'profile'; name: string } | ({ kind: 'quick' } & QuickConnect);
+
+/** An open remote screen (VNC). */
+export interface VncInfo {
+  id: number;
+  label: string;
+  width: number;
+  height: number;
+  /** The desktop's own name, as reported by the server. */
+  name: string;
+}
 
 export type OverwritePolicy = 'ask' | 'overwrite' | 'skip' | 'newerOnly';
 

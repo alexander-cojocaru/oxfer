@@ -10,6 +10,7 @@
   import PromptDialog from './components/PromptDialog.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import TerminalDialog from './components/TerminalDialog.svelte';
+  import VncViewer from './components/VncViewer.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferQueue from './components/TransferQueue.svelte';
   import { api } from './lib/api';
@@ -21,7 +22,14 @@
   import { isActive, totalSpeed } from './lib/transfers';
   import { clamp, loadSize, QUEUE, saveSize, SIDEBAR, SPLIT } from './lib/layout';
   import Splitter from './components/Splitter.svelte';
-  import { LOCAL_SESSION, type Credential, type OverwritePolicy, type Profile, type SessionInfo } from './lib/types';
+  import {
+    LOCAL_SESSION,
+    type ConnectRequest,
+    type Credential,
+    type OverwritePolicy,
+    type Profile,
+    type SessionInfo,
+  } from './lib/types';
 
   type Side = 'left' | 'right';
 
@@ -40,6 +48,7 @@
   let changelogOpen = $state(false);
   let updateOpen = $state(false);
   let terminal = $state<SessionInfo | null>(null);
+  let vnc = $state<{ request: ConnectRequest; label: string } | null>(null);
   let panes = $state<Record<Side, FilePane | undefined>>({ left: undefined, right: undefined });
 
   let sidebarW = $state(loadSize(SIDEBAR));
@@ -127,8 +136,17 @@
     app.toast('success', t('connected', { label: s.label }));
   }
 
+  function openVnc(request: ConnectRequest, label: string) {
+    vnc = { request, label };
+  }
+
   async function connectProfile(p: Profile) {
     if (connecting) return;
+    // A remote screen has no file session: the viewer connects itself.
+    if (p.protocol === 'vnc') {
+      openVnc({ kind: 'profile', name: p.name }, p.name);
+      return;
+    }
     connecting = p.name;
     try {
       onconnected(await api.connect({ kind: 'profile', name: p.name }));
@@ -380,7 +398,7 @@
 </div>
 
 {#if dialog?.mode === 'quick'}
-  <ConnectionDialog mode="quick" groups={groupNames(app.profiles)} credentials={app.credentials} {onconnected} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
+  <ConnectionDialog mode="quick" groups={groupNames(app.profiles)} credentials={app.credentials} {onconnected} onvnc={openVnc} onsaved={() => app.loadProfiles()} onclose={() => (dialog = null)} />
 {:else if dialog?.mode === 'profile'}
   <ConnectionDialog
     mode="profile"
@@ -388,6 +406,7 @@
     duplicate={dialog.duplicate}
     groups={groupNames(app.profiles)}
     credentials={app.credentials}
+    onvnc={openVnc}
     onsaved={() => app.loadProfiles()}
     onclose={() => (dialog = null)}
   />
@@ -407,6 +426,10 @@
 
 {#if terminal}
   <TerminalDialog session={terminal} onclose={() => (terminal = null)} />
+{/if}
+
+{#if vnc}
+  <VncViewer request={vnc.request} label={vnc.label} onclose={() => (vnc = null)} />
 {/if}
 
 {#if prompt}

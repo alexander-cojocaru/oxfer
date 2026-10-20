@@ -57,6 +57,7 @@ pub enum ProtocolDto {
     Ftp,
     FtpsExplicit,
     FtpsImplicit,
+    Vnc,
 }
 
 impl From<oxfer_config::Protocol> for ProtocolDto {
@@ -67,6 +68,7 @@ impl From<oxfer_config::Protocol> for ProtocolDto {
             P::Ftp => Self::Ftp,
             P::FtpsExplicit => Self::FtpsExplicit,
             P::FtpsImplicit => Self::FtpsImplicit,
+            P::Vnc => Self::Vnc,
         }
     }
 }
@@ -80,6 +82,7 @@ impl ProtocolDto {
             Self::Ftp => Some(P::Ftp),
             Self::FtpsExplicit => Some(P::FtpsExplicit),
             Self::FtpsImplicit => Some(P::FtpsImplicit),
+            Self::Vnc => Some(P::Vnc),
         }
     }
 }

@@ -1010,3 +1010,153 @@ async fn local_files_open_in_place() {
     assert_eq!(at, f.p("src/a.txt"));
     assert_eq!(opened.lock().unwrap()[0], f.dir.path().join("src/a.txt"));
 }
+
+/// A VNC server (RFB 3.8, VNC password "secret", an 8x4 screen) that sends one
+/// raw 2x1 rectangle to every client that logs in. Returns its port.
+async fn fake_vnc_server() -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        loop {
+            let (mut s, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let _ = async {
+                    s.write_all(b"RFB 003.008\n").await?;
+                    let mut v = [0u8; 12];
+                    s.read_exact(&mut v).await?;
+                    s.write_all(&[1, 2]).await?;
+                    s.read_u8().await?;
+                    let challenge = [9u8; 16];
+                    s.write_all(&challenge).await?;
+                    let mut response = [0u8; 16];
+                    s.read_exact(&mut response).await?;
+                    if response != oxfer_vnc::vnc_auth_response(&challenge, "secret") {
+                        s.write_u32(1).await?;
+                        s.write_u32(5).await?;
+                        s.write_all(b"nope!").await?;
+                        return std::io::Result::Ok(());
+                    }
+                    s.write_u32(0).await?;
+                    s.read_u8().await?; // ClientInit
+                    s.write_u16(8).await?;
+                    s.write_u16(4).await?;
+                    s.write_all(&[0u8; 16]).await?;
+                    s.write_u32(5).await?;
+                    s.write_all(b"fakey").await?;
+                    let mut setup = [0u8; 20 + 24 + 10];
+                    s.read_exact(&mut setup).await?;
+                    let mut update = vec![0u8, 0, 0, 1, 0, 3, 0, 2, 0, 2, 0, 1, 0, 0, 0, 0];
+                    update.extend([1, 2, 3, 0, 4, 5, 6, 0]);
+                    s.write_all(&update).await?;
+                    // Stay until the client goes away.
+                    let mut rest = Vec::new();
+                    s.read_to_end(&mut rest).await?;
+                    Ok(())
+                }
+                .await;
+            });
+        }
+    });
+    port
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vnc_screen_with_password_prompts() {
+    let f = fixture();
+    let port = fake_vnc_server().await;
+    f.svc
+        .profiles()
+        .save(
+            None,
+            ProfileDto {
+                name: "desk".into(),
+                protocol: ProtocolDto::Vnc,
+                host: "127.0.0.1".into(),
+                port: Some(port),
+                user: None,
+                auth: AuthDto::Interactive,
+                remote_dir: None,
+                group: None,
+                credential: None,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+
+    let (tx, mut messages) = unbounded_channel::<Vec<u8>>();
+    let sink: Arc<dyn oxfer_gui::service::VncSink> = Arc::new(move |m: Vec<u8>| {
+        let _ = tx.send(m);
+    });
+    let password = |p: &str| PromptAnswer::Password {
+        value: oxfer_gui::service::SecretString(p.to_string()),
+    };
+    // A wrong password is asked for again (as a retry), then accepted.
+    let prompter = ScriptedPrompter::new([password("wrong"), password("secret")]);
+    let req = ConnectRequest::Profile {
+        name: "desk".into(),
+    };
+    let info = f
+        .svc
+        .vnc_open(req, prompter.clone(), sink.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            info.label.as_str(),
+            info.width,
+            info.height,
+            info.name.as_str()
+        ),
+        ("desk", 8, 4, "fakey")
+    );
+    assert!(matches!(
+        &prompter.asked()[..],
+        [
+            Prompt::Password { retry: false, .. },
+            Prompt::Password { retry: true, .. }
+        ]
+    ));
+
+    let m = tokio::time::timeout(Duration::from_secs(5), messages.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    // tag 1 (rectangle), x=3 y=2 w=2 h=1, little-endian, RGBA
+    assert_eq!(m, [1, 3, 0, 2, 0, 2, 0, 1, 0, 1, 2, 3, 255, 4, 5, 6, 255]);
+
+    f.svc.vnc_key(info.id, 0x61, true).unwrap();
+    f.svc.vnc_pointer(info.id, 1, 1, 1).unwrap();
+    f.svc.vnc_close(info.id).unwrap();
+    assert_eq!(f.svc.vnc_close(info.id).unwrap_err().code, "unknownVnc");
+    assert_eq!(
+        f.svc.vnc_key(info.id, 1, true).unwrap_err().code,
+        "unknownVnc"
+    );
+
+    // Dismissing the password question cancels; a file session is refused.
+    let e = f
+        .svc
+        .vnc_open(
+            ConnectRequest::Profile {
+                name: "desk".into(),
+            },
+            ScriptedPrompter::new([PromptAnswer::Cancel]),
+            sink,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, "cancelled");
+    let e = f
+        .svc
+        .connect(
+            ConnectRequest::Profile {
+                name: "desk".into(),
+            },
+            ScriptedPrompter::new([]),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, "invalid");
+}

@@ -18,6 +18,7 @@
     x: 'M6 6l12 12M18 6 6 18',
     retry: 'M4 4v6h6M20 20v-6h-6M5.6 15A8 8 0 0 0 19 16.4M18.4 9A8 8 0 0 0 5 7.6',
     plug: 'M9 2v6m6-6v6M6 8h12v3a6 6 0 0 1-12 0zm6 9v5',
+    monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
     server: 'M4 4h16v6H4zm0 10h16v6H4zM8 7h.01M8 17h.01',
     laptop: 'M4 5h16v11H4zM2 19h20',
     sidebar: 'M4 4h16v16H4zM9 4v16',

@@ -10,6 +10,7 @@ default-members = [
     "crates/oxfer-core",
     "crates/oxfer-ftp",
     "crates/oxfer-sftp",
+    "crates/oxfer-vnc",
     "crates/oxfer-testutil",
 ]
 
@@ -28,3 +29,4 @@ async-trait = "0.1"
 oxfer-core = { path = "crates/oxfer-core" }
 oxfer-sftp = { path = "crates/oxfer-sftp" }
 oxfer-ftp = { path = "crates/oxfer-ftp" }
+oxfer-vnc = { path = "crates/oxfer-vnc" }

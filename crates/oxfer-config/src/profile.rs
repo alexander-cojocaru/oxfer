@@ -12,6 +12,8 @@ pub enum Protocol {
     Ftp,
     FtpsExplicit,
     FtpsImplicit,
+    /// A remote screen (VNC / macOS Screen Sharing), not a file transfer.
+    Vnc,
 }
 
 impl Protocol {
@@ -20,6 +22,7 @@ impl Protocol {
             Protocol::Sftp => 22,
             Protocol::Ftp | Protocol::FtpsExplicit => 21,
             Protocol::FtpsImplicit => 990,
+            Protocol::Vnc => 5900,
         }
     }
 
@@ -29,6 +32,7 @@ impl Protocol {
             Protocol::Ftp => "ftp",
             Protocol::FtpsExplicit => "ftps-explicit",
             Protocol::FtpsImplicit => "ftps-implicit",
+            Protocol::Vnc => "vnc",
         }
     }
 }

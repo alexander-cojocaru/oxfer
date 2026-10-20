@@ -24,6 +24,7 @@ custom-protocol = ["tauri/custom-protocol"]
 oxfer-core.workspace = true
 oxfer-sftp.workspace = true
 oxfer-ftp.workspace = true
+oxfer-vnc.workspace = true
 oxfer-config = { path = "../oxfer-config" }
 anyhow.workspace = true
 async-trait.workspace = true

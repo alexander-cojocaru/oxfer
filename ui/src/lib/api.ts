@@ -19,6 +19,7 @@ import type {
   TransferRequest,
   UpdateInfo,
   UpdateProgress,
+  VncInfo,
 } from './types';
 
 export const api = {
@@ -63,6 +64,22 @@ export const api = {
   terminalResize: (id: number, cols: number, rows: number) =>
     invoke<void>('terminal_resize', { id, cols, rows }),
   closeTerminal: (id: number) => invoke<void>('close_terminal', { id }),
+
+  /**
+   * Opens a remote screen. `onMessage` receives the screen as binary messages
+   * (decode them with `parseVncMessage`); the first ones can arrive before the
+   * returned promise resolves.
+   */
+  vncOpen: (request: ConnectRequest, onMessage: (data: ArrayBuffer) => void) => {
+    const channel = new Channel<ArrayBuffer>();
+    channel.onmessage = onMessage;
+    return invoke<VncInfo>('vnc_open', { request, onMessage: channel });
+  },
+  vncKey: (id: number, keysym: number, down: boolean) => invoke<void>('vnc_key', { id, keysym, down }),
+  vncPointer: (id: number, x: number, y: number, buttons: number) =>
+    invoke<void>('vnc_pointer', { id, x, y, buttons }),
+  vncClipboard: (id: number, text: string) => invoke<void>('vnc_clipboard', { id, text }),
+  vncClose: (id: number) => invoke<void>('vnc_close', { id }),
 
   answerPrompt: (id: number, answer: PromptAnswer) => invoke<void>('answer_prompt', { id, answer }),
 

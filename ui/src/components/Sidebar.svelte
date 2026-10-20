@@ -169,7 +169,7 @@
   });
 
   function protoLabel(p: Profile['protocol']) {
-    return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : 'FTPS';
+    return p === 'sftp' ? 'SFTP' : p === 'ftp' ? 'FTP' : p === 'vnc' ? 'VNC' : 'FTPS';
   }
 
   // Left click connects; everything else lives in the right-click menu.
@@ -333,7 +333,7 @@
                 title={profileTitle(p)}
                 onclick={() => onconnectprofile(p)}
               >
-                <Icon name="server" size={14} />
+                <Icon name={p.protocol === 'vnc' ? 'monitor' : 'server'} size={14} />
                 <span class="label">
                   <span class="name">{p.name}</span>
                   <span class="sub">

@@ -181,3 +181,68 @@ describe('ConnectionDialog', () => {
     expect(mocked.saveProfile).toHaveBeenCalledWith(null, { ...profile, name: 'web copy', host: '10.0.0.2' }, null, 'web');
   });
 });
+
+describe('ConnectionDialog with VNC', () => {
+  it('a quick VNC connection opens a screen instead of a file session', async () => {
+    const user = userEvent.setup();
+    const onvnc = vi.fn();
+    const onconnected = vi.fn();
+    const onclose = vi.fn();
+    render(ConnectionDialog, { props: { mode: 'quick', onvnc, onconnected, onclose } });
+
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'vnc');
+    expect(screen.getByLabelText('Port')).toHaveAttribute('placeholder', '5900');
+    // A screen has no start directory.
+    expect(screen.queryByLabelText('Start directory')).not.toBeInTheDocument();
+    expect(screen.getByText(/macOS Screen Sharing/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Host'), '10.0.0.5');
+    await user.type(screen.getByLabelText('User'), 'alice');
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    expect(onvnc).toHaveBeenCalledWith(
+      { kind: 'quick', protocol: 'vnc', host: '10.0.0.5', port: null, user: 'alice', auth: 'password', password: 'pw' },
+      'alice@10.0.0.5',
+    );
+    expect(mocked.connect).not.toHaveBeenCalled();
+    expect(onconnected).not.toHaveBeenCalled();
+    expect(onclose).toHaveBeenCalled();
+  });
+
+  it('works without a user or password (asked for later)', async () => {
+    const user = userEvent.setup();
+    const onvnc = vi.fn();
+    render(ConnectionDialog, { props: { mode: 'quick', onvnc, onclose: vi.fn() } });
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'vnc');
+    await user.type(screen.getByLabelText('Host'), 'desk.local');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(onvnc).toHaveBeenCalledWith(
+      { kind: 'quick', protocol: 'vnc', host: 'desk.local', port: null, user: null, auth: 'password', password: null },
+      'desk.local',
+    );
+  });
+
+  it('saving a VNC profile while connecting opens the screen by profile name', async () => {
+    const user = userEvent.setup();
+    mocked.saveProfile.mockImplementation(async (_o, p) => p);
+    const onvnc = vi.fn();
+    const onsaved = vi.fn();
+    render(ConnectionDialog, { props: { mode: 'quick', onvnc, onsaved, onclose: vi.fn() } });
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'vnc');
+    await user.type(screen.getByLabelText('Host'), 'desk.local');
+    await user.click(screen.getByLabelText('Save as profile'));
+    await user.type(screen.getByLabelText('Profile name'), 'Desk');
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    expect(mocked.saveProfile).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ name: 'Desk', protocol: 'vnc', host: 'desk.local', remoteDir: null }),
+      null,
+      null,
+    );
+    expect(onsaved).toHaveBeenCalled();
+    expect(onvnc).toHaveBeenCalledWith({ kind: 'profile', name: 'Desk' }, 'Desk');
+    expect(mocked.connect).not.toHaveBeenCalled();
+  });
+});
