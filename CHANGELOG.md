@@ -3,7 +3,7 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
-## Unreleased
+## 0.8.1 - 2026-10-20
 
 - SFTP and FTP profiles can have their own VNC password: set it in the profile
   dialog ("VNC password", stored in the OS keychain) and "Open screen (VNC)"
