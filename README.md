@@ -10,7 +10,7 @@ The name is *oxide* (Rust) + *transfer*.
 - **Safe**: strict `known_hosts` checking, files appear only when complete, and
   hostile servers cannot write outside your destination directory.
 - **Cross-platform**: the CLI builds on macOS, Linux and Windows; the desktop
-  app is currently packaged for macOS.
+  app is packaged for macOS and Windows.
 
 ## Features
 
@@ -63,6 +63,18 @@ xattr -dr com.apple.quarantine /Applications/oxfer.app
 
 After that, "Check for updates" in the status bar downloads and installs new
 releases; updates are verified against a public key built into the app.
+
+### Desktop app (Windows)
+
+Download `oxfer-<version>-windows-x64-setup.exe` from the
+[latest release](https://github.com/alexander-cojocaru/oxfer/releases/latest)
+and run it. It installs for the current user (no administrator rights) and
+needs the WebView2 runtime, which the installer downloads if Windows does not
+have it yet. The installer is not code-signed, so SmartScreen may warn: click
+"More info" → "Run anyway". "Check for updates" works as on macOS.
+
+`oxfer.exe` in the zip archive is the command-line tool, not the app: run it
+from a terminal.
 
 ### Command line
 

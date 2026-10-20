@@ -3,6 +3,11 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## Unreleased
+
+- Windows desktop app: `oxfer-<version>-windows-x64-setup.exe` installs oxfer
+  for the current user and updates itself from "Check for updates".
+
 ## 0.7.2 - 2026-10-20
 
 - Fixed VNC failing with "unsupported: RFB protocol version 5.0" against recent

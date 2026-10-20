@@ -49,9 +49,17 @@ local `install-macos-app.sh` builds share one identity. Set it up once:
    rm oxfer-signing.p12
    ```
 
+The Windows installer (NSIS) is cross-compiled on the self-hosted Linux runner
+with `cargo-xwin`; the runner needs `nsis`, `clang`, `lld` and `llvm`
+(`apt-get install nsis clang lld llvm`). Locally, the same build works on macOS
+after `brew install llvm makensis` and `cargo install cargo-xwin`: put llvm on `PATH`,
+set `XWIN_ACCEPT_LICENSE=1` and run `npx @tauri-apps/cli@2 build --runner
+cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis` in `crates/oxfer-gui`.
+
 The app updates itself: "Check for updates" in the status bar reads
-`latest.json` from the latest release, downloads the signed `.app.tar.gz` and
-verifies it against the public key in `crates/oxfer-gui/tauri.conf.json`.
+`latest.json` from the latest release (written by the `updater` job once the
+macOS and Windows builds are up), downloads the signed `.app.tar.gz` or
+Windows installer and verifies it against the public key in `crates/oxfer-gui/tauri.conf.json`.
 The release job needs the matching private key (generated once with
 `npx @tauri-apps/cli@2 signer generate -w ~/.tauri/oxfer-updater.key`):
 
