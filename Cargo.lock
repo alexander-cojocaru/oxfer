@@ -3733,7 +3733,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-cli"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3761,7 +3761,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-config"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "directories 5.0.1",
  "glob",
@@ -3777,7 +3777,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-core"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "globset",
@@ -3792,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-ftp"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "oxfer-core",
@@ -3809,7 +3809,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-gui"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3834,7 +3834,7 @@ dependencies = [
 
 [[package]]
 name = "oxfer-sftp"
-version = "0.6.4"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "oxfer-core",
@@ -3848,11 +3848,11 @@ dependencies = [
 
 [[package]]
 name = "oxfer-testutil"
-version = "0.6.4"
+version = "0.7.0"
 
 [[package]]
 name = "oxfer-vnc"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "aes",
  "des",

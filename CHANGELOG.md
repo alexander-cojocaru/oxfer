@@ -3,6 +3,14 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.7.0 - 2026-10-20
+
+- VNC support: a new "VNC" protocol in the connection dialog (VNC and Apple
+  Remote Desktop authentication). Saved VNC profiles and quick connect open a
+  full-window remote screen viewer with keyboard, mouse, wheel and clipboard,
+  scale-to-fit and automatic reconnect.
+- Press Esc to close the terminal window.
+
 ## 0.6.4 - 2026-10-20
 
 - Fixed the update dialog offering the version you already have: the app now
