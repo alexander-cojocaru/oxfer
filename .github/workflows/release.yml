@@ -144,7 +144,9 @@ jobs:
             exit 1
           fi
           archive="oxfer-${GITHUB_REF_NAME}-macos-universal.app.tar.gz"
-          tar -czf "$archive" -C target/universal-apple-darwin/release/bundle/macos oxfer.app
+          # COPYFILE_DISABLE keeps macOS tar from adding AppleDouble `._*`
+          # entries, which the updater fails to unpack.
+          COPYFILE_DISABLE=1 tar -czf "$archive" -C target/universal-apple-darwin/release/bundle/macos oxfer.app
           npx --yes @tauri-apps/cli@2 signer sign "$archive"
           scripts/release-notes.sh "$GITHUB_REF_NAME" > release-notes.md
           scripts/gen-latest-json.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$archive" "$archive.sig" release-notes.md > latest.json
