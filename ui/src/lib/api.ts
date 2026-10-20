@@ -52,6 +52,9 @@ export const api = {
   importProfiles: (path: string, overwrite: boolean) =>
     invoke<{ added: number; replaced: number; skipped: number }>('import_profiles', { path, overwrite }),
   deleteProfile: (name: string) => invoke<void>('delete_profile', { name }),
+  /** Sets the VNC password of a file profile; `null` removes it. */
+  setVncPassword: (name: string, password: string | null) => invoke<void>('set_vnc_password', { name, password }),
+  hasVncPassword: (name: string) => invoke<boolean>('has_vnc_password', { name }),
 
   listCredentials: () => invoke<Credential[]>('list_credentials'),
   saveCredential: (original: string | null, credential: Credential, password: string | null) =>

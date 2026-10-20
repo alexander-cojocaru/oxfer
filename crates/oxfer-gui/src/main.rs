@@ -240,6 +240,21 @@ fn import_profiles(
         .import_from(&expand_home(&path), overwrite)
 }
 
+/// Sets (or, with an empty password, removes) the VNC password of a file profile.
+#[tauri::command]
+fn set_vnc_password(
+    state: State<'_, AppState>,
+    name: String,
+    password: Option<SecretString>,
+) -> CmdResult<()> {
+    state.svc.profiles().set_vnc_password(&name, password)
+}
+
+#[tauri::command]
+fn has_vnc_password(state: State<'_, AppState>, name: String) -> CmdResult<bool> {
+    Ok(state.svc.profiles().vnc_password(&name)?.is_some())
+}
+
 #[tauri::command]
 fn delete_profile(state: State<'_, AppState>, name: String) -> CmdResult<()> {
     state.svc.profiles().delete(&name)
@@ -433,6 +448,8 @@ fn main() {
             list_profiles,
             save_profile,
             delete_profile,
+            set_vnc_password,
+            has_vnc_password,
             export_profiles,
             import_profiles,
             read_preview,

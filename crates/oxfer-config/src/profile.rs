@@ -47,6 +47,11 @@ pub enum AuthMethod {
     Interactive,
 }
 
+/// See [`Profile::vnc_secret_key`].
+pub fn vnc_secret_key(profile: &str) -> String {
+    format!("{profile}\u{1f}vnc")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -100,6 +105,13 @@ impl Profile {
             Some(c) => crate::credential::secret_key(c),
             None => self.name.clone(),
         }
+    }
+
+    /// Key of this profile's own VNC password in the [`SecretStore`]. Profile
+    /// names cannot contain control characters, so it never collides with a
+    /// profile's or credential's key.
+    pub fn vnc_secret_key(&self) -> String {
+        vnc_secret_key(&self.name)
     }
 
     /// Case-insensitive search: every whitespace-separated term must occur in

@@ -15,7 +15,7 @@ pub mod ssh_config;
 pub use config::{Config, MergeReport};
 pub use credential::{Credential, CREDENTIAL_SECRET_PREFIX};
 pub use jump::jump_chain;
-pub use profile::{AuthMethod, Profile, Protocol};
+pub use profile::{vnc_secret_key, AuthMethod, Profile, Protocol};
 pub use secrets::{KeyringStore, MemoryStore, Secret, SecretStore};
 pub use ssh_config::{ResolvedHost, SshConfig};
 
