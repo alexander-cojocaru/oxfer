@@ -140,19 +140,9 @@
     vnc = { request, label };
   }
 
-  // The screen of a file profile's host: a quick VNC connection to it.
+  // The screen of a file profile's host (with the profile's own VNC password, if any).
   function profileScreen(p: Profile) {
-    openVnc(
-      {
-        kind: 'quick',
-        protocol: 'vnc',
-        host: p.host,
-        user: p.credential ? null : p.user,
-        credential: p.credential,
-        auth: 'auto',
-      },
-      p.name,
-    );
+    openVnc({ kind: 'screen', name: p.name }, p.name);
   }
 
   async function connectProfile(p: Profile) {

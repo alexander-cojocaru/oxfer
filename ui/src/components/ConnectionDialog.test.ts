@@ -8,6 +8,8 @@ vi.mock('../lib/api', () => ({
   api: {
     connect: vi.fn(),
     saveProfile: vi.fn(),
+    setVncPassword: vi.fn(),
+    hasVncPassword: vi.fn(),
   },
   errorMessage: (e: { message?: string }) => e?.message ?? String(e),
 }));
@@ -17,6 +19,8 @@ const session = { id: 's1', label: 'bob@example.com', protocol: 'sftp' as const,
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocked.hasVncPassword.mockResolvedValue(false);
+  mocked.setVncPassword.mockResolvedValue(undefined);
 });
 
 describe('ConnectionDialog', () => {
@@ -244,5 +248,58 @@ describe('ConnectionDialog with VNC', () => {
     expect(onsaved).toHaveBeenCalled();
     expect(onvnc).toHaveBeenCalledWith({ kind: 'profile', name: 'Desk' }, 'Desk');
     expect(mocked.connect).not.toHaveBeenCalled();
+  });
+
+  describe('VNC password of a file profile', () => {
+    const profile = {
+      name: 'box',
+      protocol: 'sftp' as const,
+      host: 'box.local',
+      port: null,
+      user: 'me',
+      auth: { method: 'agent' as const },
+      remoteDir: null,
+      group: null,
+      credential: null,
+    };
+
+    it('is stored after saving, under the saved name', async () => {
+      const user = userEvent.setup();
+      mocked.saveProfile.mockImplementation(async (_o, p) => p);
+      render(ConnectionDialog, { props: { mode: 'profile', profile, onclose: vi.fn() } });
+      await user.type(screen.getByLabelText('VNC password'), 'screen');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(mocked.saveProfile).toHaveBeenCalledWith('box', expect.objectContaining({ name: 'box' }), null, null);
+      expect(mocked.setVncPassword).toHaveBeenCalledWith('box', 'screen');
+    });
+
+    it('stays untouched when left empty', async () => {
+      const user = userEvent.setup();
+      mocked.saveProfile.mockImplementation(async (_o, p) => p);
+      render(ConnectionDialog, { props: { mode: 'profile', profile, onclose: vi.fn() } });
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      expect(mocked.setVncPassword).not.toHaveBeenCalled();
+    });
+
+    it('can be removed when one is stored', async () => {
+      const user = userEvent.setup();
+      mocked.hasVncPassword.mockResolvedValue(true);
+      mocked.saveProfile.mockImplementation(async (_o, p) => p);
+      render(ConnectionDialog, { props: { mode: 'profile', profile, onclose: vi.fn() } });
+      await user.click(await screen.findByLabelText('Remove the stored VNC password'));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+      expect(mocked.setVncPassword).toHaveBeenCalledWith('box', null);
+    });
+
+    it('is not offered for VNC profiles or quick connections', async () => {
+      const { unmount } = render(ConnectionDialog, {
+        props: { mode: 'profile', profile: { ...profile, protocol: 'vnc' as const }, onclose: vi.fn() },
+      });
+      expect(screen.queryByLabelText('VNC password')).toBeNull();
+      unmount();
+      render(ConnectionDialog, { props: { mode: 'quick', onclose: vi.fn() } });
+      expect(screen.queryByLabelText('VNC password')).toBeNull();
+    });
   });
 });

@@ -83,7 +83,13 @@ pub struct QuickConnect {
     rename_all_fields = "camelCase"
 )]
 pub enum ConnectRequest {
-    Profile { name: String },
+    Profile {
+        name: String,
+    },
+    /// The screen (VNC) of the host of a saved file profile.
+    Screen {
+        name: String,
+    },
     Quick(QuickConnect),
 }
 
@@ -114,6 +120,8 @@ pub(crate) fn request_key(profiles: &ProfileStore, req: &ConnectRequest) -> Opti
             let user = p.user.as_deref().unwrap_or_default();
             Some(server_key(p.protocol, user, &p.host, p.effective_port()))
         }
+        // A screen is not a file session; nothing to reuse.
+        ConnectRequest::Screen { .. } => None,
         ConnectRequest::Quick(q) => {
             let protocol = q.protocol.to_config()?;
             let user = match q.credential.as_deref().filter(|c| !c.trim().is_empty()) {
@@ -399,6 +407,9 @@ pub(crate) async fn connect(
             }
             connect_profile(env, profiles, &profile, prompter).await
         }
+        ConnectRequest::Screen { .. } => Err(ServiceError::invalid(
+            "a remote screen is not a file session",
+        )),
         ConnectRequest::Quick(q) => {
             let q = apply_credential(profiles, q)?;
             connect_quick(env, q, prompter).await

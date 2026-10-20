@@ -285,6 +285,33 @@ impl ProfileStore {
         Ok(())
     }
 
+    /// The profile's own VNC password, if one is stored.
+    pub fn vnc_password(&self, name: &str) -> ServiceResult<Option<String>> {
+        Ok(self
+            .secrets
+            .get(&oxfer_config::vnc_secret_key(name))?
+            .map(|s| s.expose().to_string()))
+    }
+
+    /// Store `password` as the VNC password of the file profile `name`; `None`
+    /// (or empty) removes it.
+    pub fn set_vnc_password(
+        &self,
+        name: &str,
+        password: Option<SecretString>,
+    ) -> ServiceResult<()> {
+        let _g = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        if self.load()?.get(name).is_none() {
+            return Err(oxfer_config::Error::NotFound(name.into()).into());
+        }
+        let key = oxfer_config::vnc_secret_key(name);
+        match password.filter(|p| !p.0.is_empty()) {
+            Some(pw) => self.secrets.set(&key, &Secret::new(pw.0))?,
+            None => self.secrets.delete(&key)?,
+        }
+        Ok(())
+    }
+
     /// Create (`original` = `None`) or replace the profile `original`
     /// (possibly renaming it). A non-empty `password` is stored in the secret
     /// store; switching away from password auth deletes the stored one.
@@ -326,6 +353,19 @@ impl ProfileStore {
         if let Some(old) = renamed_from {
             self.secrets.delete(old)?;
         }
+        // The VNC password follows a rename or a duplicate.
+        if let Some(old) = renamed_from.or(copy_from) {
+            let (old_key, new_key) = (
+                oxfer_config::vnc_secret_key(old),
+                oxfer_config::vnc_secret_key(&new.name),
+            );
+            if let Some(s) = self.secrets.get(&old_key)? {
+                self.secrets.set(&new_key, &s)?;
+            }
+            if renamed_from.is_some() {
+                self.secrets.delete(&old_key)?;
+            }
+        }
         cfg.save_to(&self.path)?;
         Ok(ProfileDto::from(&new))
     }
@@ -336,6 +376,7 @@ impl ProfileStore {
         cfg.remove(name)?;
         cfg.save_to(&self.path)?;
         self.secrets.delete(name)?;
+        self.secrets.delete(&oxfer_config::vnc_secret_key(name))?;
         Ok(())
     }
 }
@@ -357,6 +398,58 @@ mod tests {
             group: Some(" Work ".into()),
             credential: None,
         }
+    }
+
+    #[test]
+    fn vnc_password_follows_the_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let secrets = Arc::new(MemoryStore::default());
+        let store = ProfileStore::new(dir.path().join("config.toml"), secrets.clone());
+        let pw = |s: &str| Some(SecretString(s.into()));
+        store
+            .save(None, dto("web", AuthDto::Agent), None, None)
+            .unwrap();
+
+        assert_eq!(store.vnc_password("web").unwrap(), None);
+        assert_eq!(
+            store.set_vnc_password("nope", pw("x")).unwrap_err().code,
+            "notFound"
+        );
+        store.set_vnc_password("web", pw("screen")).unwrap();
+        assert_eq!(
+            store.vnc_password("web").unwrap().as_deref(),
+            Some("screen")
+        );
+        // never mixed up with the file password or written to the config file
+        assert!(secrets.get("web").unwrap().is_none());
+        let text = std::fs::read_to_string(dir.path().join("config.toml")).unwrap();
+        assert!(
+            !text.contains("screen"),
+            "password leaked into file: {text}"
+        );
+
+        // duplicate and rename carry it along
+        store
+            .save(None, dto("web-copy", AuthDto::Agent), None, Some("web"))
+            .unwrap();
+        assert_eq!(
+            store.vnc_password("web-copy").unwrap().as_deref(),
+            Some("screen")
+        );
+        store
+            .save(Some("web"), dto("web2", AuthDto::Agent), None, None)
+            .unwrap();
+        assert_eq!(store.vnc_password("web").unwrap(), None);
+        assert_eq!(
+            store.vnc_password("web2").unwrap().as_deref(),
+            Some("screen")
+        );
+
+        // empty removes; deleting the profile removes it too
+        store.set_vnc_password("web2", pw("")).unwrap();
+        assert_eq!(store.vnc_password("web2").unwrap(), None);
+        store.delete("web-copy").unwrap();
+        assert_eq!(store.vnc_password("web-copy").unwrap(), None);
     }
 
     #[test]

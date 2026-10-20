@@ -9,7 +9,7 @@ use oxfer_config::{AuthMethod, Protocol};
 use oxfer_vnc::{ConnectOptions, Event};
 use serde::Serialize;
 
-use super::connect::{ConnectRequest, QuickConnect};
+use super::connect::{ConnectRequest, QuickAuth, QuickConnect};
 use super::dto::ProtocolDto;
 use super::error::{ServiceError, ServiceResult};
 use super::profiles::ProfileStore;
@@ -89,8 +89,42 @@ fn resolve(profiles: &ProfileStore, req: ConnectRequest) -> ServiceResult<Target
                 password,
             })
         }
+        ConnectRequest::Screen { name } => resolve_screen(profiles, &name),
         ConnectRequest::Quick(q) => resolve_quick(profiles, q),
     }
+}
+
+/// The screen of a file profile's host (VNC port, not the profile's file
+/// port). The profile's own VNC password wins; without one, the shared
+/// credential's login is tried (as for a quick connection) and the server is
+/// asked for anything missing.
+fn resolve_screen(profiles: &ProfileStore, name: &str) -> ServiceResult<Target> {
+    let p = profiles.get(name)?;
+    if p.protocol == Protocol::Vnc {
+        return Err(ServiceError::invalid(format!(
+            "{name:?} is a VNC profile, open it directly"
+        )));
+    }
+    let mut target = resolve_quick(
+        profiles,
+        QuickConnect {
+            protocol: ProtocolDto::Vnc,
+            host: p.host.clone(),
+            port: None,
+            user: p.user.clone(),
+            auth: QuickAuth::Password,
+            password: None,
+            key_path: None,
+            remote_dir: None,
+            insecure_tls: false,
+            credential: p.credential.clone(),
+        },
+    )?;
+    target.label = name.to_string();
+    if let Some(pw) = profiles.vnc_password(name)? {
+        target.password = Some(pw);
+    }
+    Ok(target)
 }
 
 fn resolve_quick(profiles: &ProfileStore, q: QuickConnect) -> ServiceResult<Target> {
@@ -241,5 +275,77 @@ impl VncHub {
             .ok_or_else(|| ServiceError::new("unknownVnc", format!("no remote screen #{id}")))?;
         handle.close();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::service::{AuthDto, CredentialDto, ProfileDto, SecretString};
+    use oxfer_config::MemoryStore;
+
+    fn store_with(auth: AuthDto, credential: Option<&str>) -> (tempfile::TempDir, ProfileStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ProfileStore::new(dir.path().join("c.toml"), Arc::new(MemoryStore::default()));
+        if let Some(c) = credential {
+            let cred = CredentialDto {
+                name: c.into(),
+                user: Some("admin".into()),
+                auth: AuthDto::Password,
+            };
+            store
+                .save_credential(None, cred, Some(SecretString("ssh-pw".into())))
+                .unwrap();
+        }
+        store
+            .save(
+                None,
+                ProfileDto {
+                    name: "box".into(),
+                    protocol: ProtocolDto::Sftp,
+                    host: "box.local".into(),
+                    port: Some(2222),
+                    user: Some("me".into()),
+                    auth,
+                    remote_dir: None,
+                    group: None,
+                    credential: credential.map(Into::into),
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        (dir, store)
+    }
+
+    #[test]
+    fn screen_uses_the_vnc_port_and_asks_without_a_password() {
+        let (_d, store) = store_with(AuthDto::Agent, None);
+        let t = resolve_screen(&store, "box").unwrap();
+        assert_eq!(
+            (t.host.as_str(), t.port, t.label.as_str()),
+            ("box.local", 5900, "box")
+        );
+        assert_eq!((t.user.as_deref(), t.password), (Some("me"), None));
+    }
+
+    #[test]
+    fn screen_prefers_its_own_password_over_the_credentials() {
+        let (_d, store) = store_with(AuthDto::Agent, Some("shared"));
+        // before: the credential's login is tried
+        let t = resolve_screen(&store, "box").unwrap();
+        assert_eq!(
+            (t.user.as_deref(), t.password.as_deref()),
+            (Some("admin"), Some("ssh-pw"))
+        );
+        // after: the screen's own password, same user
+        store
+            .set_vnc_password("box", Some(SecretString("screen".into())))
+            .unwrap();
+        let t = resolve_screen(&store, "box").unwrap();
+        assert_eq!(
+            (t.user.as_deref(), t.password.as_deref()),
+            (Some("admin"), Some("screen"))
+        );
     }
 }

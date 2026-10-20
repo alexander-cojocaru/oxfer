@@ -68,7 +68,11 @@ export interface QuickConnect {
   credential?: string | null;
 }
 
-export type ConnectRequest = { kind: 'profile'; name: string } | ({ kind: 'quick' } & QuickConnect);
+export type ConnectRequest =
+  | { kind: 'profile'; name: string }
+  /** The screen (VNC) of a saved file profile's host. */
+  | { kind: 'screen'; name: string }
+  | ({ kind: 'quick' } & QuickConnect);
 
 /** An open remote screen (VNC). */
 export interface VncInfo {

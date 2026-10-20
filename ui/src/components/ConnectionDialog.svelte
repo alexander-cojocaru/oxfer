@@ -56,6 +56,10 @@
   );
   let keyPath = $state(initial?.auth.method === 'keyFile' ? initial.auth.path : '');
   let password = $state('');
+  // The profile's own VNC password (for "Open screen"), set separately from the login.
+  let vncPassword = $state('');
+  let vncStored = $state(false);
+  let clearVnc = $state(false);
   let remoteDir = $state(initial?.remoteDir ?? '');
   let group = $state(initial?.group ?? '');
   // '' = enter user and authentication below
@@ -69,6 +73,16 @@
   const isSftp = $derived(protocol === 'sftp');
   const isVnc = $derived(protocol === 'vnc');
   const saving = $derived(mode === 'profile' || saveAsProfile);
+  const hasScreenPassword = $derived(mode === 'profile' && !isVnc);
+
+  $effect(() => {
+    if (mode !== 'profile' || !initial) return;
+    try {
+      api.hasVncPassword(initial.name).then((v) => (vncStored = v), () => {});
+    } catch {
+      /* no stored-password hint */
+    }
+  });
   const authChoices = $derived.by((): { value: AuthChoice; label: string }[] => {
     if (isSftp) {
       const base: { value: AuthChoice; label: string }[] = [
@@ -140,6 +154,9 @@
           !usesCredential && auth === 'password' && password ? password : null,
           isCopy ? (initial?.name ?? null) : null,
         );
+        if (hasScreenPassword && (clearVnc || vncPassword)) {
+          await api.setVncPassword(saved.name, clearVnc ? null : vncPassword);
+        }
         onsaved?.(saved);
         if (mode === 'profile') {
           onclose();
@@ -187,6 +204,7 @@
     } finally {
       busy = false;
       password = '';
+      vncPassword = '';
     }
   }
 
@@ -287,6 +305,21 @@
         <span>{t('remoteDir')}</span>
         <input bind:value={remoteDir} class="mono" spellcheck="false" placeholder="~" />
       </label>
+    {/if}
+    {#if hasScreenPassword}
+      <div class="field wide">
+        <label class="field">
+          <span>{t('vncScreenPassword')}</span>
+          <input type="password" bind:value={vncPassword} autocomplete="off" disabled={clearVnc} aria-describedby="vnc-screen-hint" />
+        </label>
+        <small id="vnc-screen-hint" class="hint">{vncStored ? t('vncScreenPasswordStoredHint') : t('vncScreenPasswordHint')}</small>
+        {#if vncStored}
+          <label class="check">
+            <input type="checkbox" bind:checked={clearVnc} />
+            {t('vncScreenPasswordRemove')}
+          </label>
+        {/if}
+      </div>
     {/if}
     {#if protocol === 'ftp'}
       <p class="warn wide" role="note">{t('plainFtpWarning')}</p>
