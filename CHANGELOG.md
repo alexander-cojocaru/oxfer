@@ -3,6 +3,13 @@
 All notable changes to oxfer. The newest release comes first. This file is
 shown in the desktop app (version number in the status bar).
 
+## 0.8.2 - 2026-11-11
+
+- Fixed uploads failing with "permission denied: <file>.oxfer-part" on servers
+  that refuse the temporary file (upload-only folders, file name rules). The
+  file is now written directly under its final name there; such uploads can't
+  be resumed after an interruption.
+
 ## 0.8.1 - 2026-10-20
 
 - SFTP and FTP profiles can have their own VNC password: set it in the profile
