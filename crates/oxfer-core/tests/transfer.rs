@@ -586,3 +586,65 @@ async fn path_traversal_from_server_is_skipped() {
     assert_eq!(plan.skipped.len(), 1);
     assert!(plan.skipped[0].1.contains("unsafe"));
 }
+
+/// Refuses to create anything that isn't the final file name, like an
+/// upload-only drop directory or a server with file name rules.
+struct NoPartFiles(LocalFs);
+
+#[async_trait]
+impl RemoteFs for NoPartFiles {
+    async fn list(&self, p: &RemotePath) -> Result<Vec<Entry>> {
+        self.0.list(p).await
+    }
+    async fn stat(&self, p: &RemotePath) -> Result<Entry> {
+        self.0.stat(p).await
+    }
+    async fn open_read(&self, p: &RemotePath, o: u64) -> Result<BoxRead> {
+        self.0.open_read(p, o).await
+    }
+    async fn open_write(&self, p: &RemotePath, o: u64) -> Result<BoxWrite> {
+        if p.as_str().ends_with(PART_SUFFIX) {
+            return Err(Error::PermissionDenied(p.clone()));
+        }
+        self.0.open_write(p, o).await
+    }
+    async fn mkdir(&self, p: &RemotePath) -> Result<()> {
+        self.0.mkdir(p).await
+    }
+    async fn remove(&self, p: &RemotePath) -> Result<()> {
+        self.0.remove(p).await
+    }
+    async fn rename(&self, _: &RemotePath, _: &RemotePath) -> Result<()> {
+        Err(Error::PermissionDenied(RemotePath::new("rename")))
+    }
+}
+
+#[tokio::test]
+async fn refused_part_file_falls_back_to_direct_write() {
+    let d = dirs();
+    write(&d.src.join("OPT_MUT.000"), b"new content");
+    write(&d.dst.join("OPT_MUT.000"), b"old");
+    let t = Transfer::new(
+        Arc::new(LocalFs),
+        Arc::new(NoPartFiles(LocalFs)),
+        TransferOptions {
+            verify: true,
+            ..opts()
+        },
+    );
+    let s = t
+        .copy(
+            &[rp(&d.src.join("OPT_MUT.000"))],
+            &rp(&d.dst),
+            None,
+            Control::new(),
+        )
+        .await
+        .unwrap();
+    assert!(s.is_success(), "{s:?}");
+    assert_eq!(
+        std::fs::read(d.dst.join("OPT_MUT.000")).unwrap(),
+        b"new content"
+    );
+    assert_eq!(std::fs::read_dir(&d.dst).unwrap().count(), 1);
+}
