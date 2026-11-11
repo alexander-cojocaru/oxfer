@@ -226,7 +226,18 @@ impl Transfer {
         }
 
         let mut reader = self.src.open_read(&job.src.path, offset).await?;
-        let mut writer = self.dst.open_write(&tmp, offset).await?;
+        // Some servers refuse files they don't expect: upload-only drop
+        // directories, name filters, mainframe naming rules. When the part
+        // file is refused, write straight to the destination name instead
+        // (no resume, no atomic rename, but the upload goes through).
+        let (target, mut writer) = match self.dst.open_write(&tmp, offset).await {
+            Ok(w) => (&tmp, w),
+            Err(Error::PermissionDenied(_)) if offset == 0 => {
+                (&job.dst, self.dst.open_write(&job.dst, 0).await?)
+            }
+            Err(e) => return Err(e),
+        };
+        let direct = target == &job.dst;
         let mut buf = vec![0u8; CHUNK];
         let mut done = offset;
         emit(Event::Progress {
@@ -252,7 +263,7 @@ impl Transfer {
         drop(writer);
         drop(reader);
 
-        let written = self.dst.stat(&tmp).await?.size;
+        let written = self.dst.stat(target).await?.size;
         if written != total {
             return Err(Error::Protocol(format!(
                 "size mismatch for {}: expected {total} bytes, destination has {written}",
@@ -262,11 +273,13 @@ impl Transfer {
         if self.opts.verify {
             let (a, b) = tokio::try_join!(
                 digest(&*self.src, &job.src.path, control),
-                digest(&*self.dst, &tmp, control)
+                digest(&*self.dst, target, control)
             )?;
             if a != b {
                 // The partial content is wrong; make sure a retry starts over.
-                let _ = self.dst.remove(&tmp).await;
+                if !direct {
+                    let _ = self.dst.remove(&tmp).await;
+                }
                 return Err(Error::Protocol(format!(
                     "checksum mismatch for {}",
                     job.dst
@@ -274,6 +287,9 @@ impl Transfer {
             }
         }
 
+        if direct {
+            return Ok(Outcome::Done(total));
+        }
         if existing.is_some() {
             self.dst.remove(&job.dst).await?;
         }
